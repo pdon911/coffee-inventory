@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coffee Villain Inventory</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            red: '#ff513b',
+                            black: '#000000',
+                            gray: '#1a1a1a'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-black text-white h-screen overflow-hidden">
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- COMPONENTS ---
+
+        const LoginModal = ({ onSubmit }) => {
+            const [pin, setPin] = useState('');
+            
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSubmit(pin);
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+                    <div className="bg-neutral-900 border border-brand-red/30 p-8 rounded-2xl w-full max-w-sm text-center">
+                        <i className="fa-solid fa-lock text-4xl text-brand-red mb-4"></i>
+                        <h2 className="text-xl font-bold mb-6">Staff Access</h2>
+                        <form onSubmit={handleSubmit}>
+                            <input 
+                                type="password" 
+                                pattern="[0-9]*" 
+                                inputMode="numeric"
+                                className="w-full bg-black border border-neutral-700 rounded-xl p-4 text-center text-2xl tracking-widest mb-6 focus:border-brand-red outline-none"
+                                value={pin}
+                                onChange={(e) => setPin(e.target.value)}
+                                placeholder="Enter PIN"
+                                autoFocus
+                            />
+                            <button className="w-full bg-brand-red text-black font-bold py-4 rounded-xl hover:opacity-90 transition">
+                                UNLOCK
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const ItemCard = ({ item, onToggleStar, onUpdateStock }) => {
+            // Helper to get initials if image fails
+            const getInitials = (name) => name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+            
+            return (
+                <div className="bg-neutral-900 rounded-xl p-4 mb-4 border border-neutral-800">
+                    <div className="flex items-start gap-4 mb-4">
+                        {/* Thumbnail */}
+                        <div className="w-16 h-16 rounded-lg bg-neutral-800 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                            {item.image_url ? (
+                                <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                            ) : (
+                                <span className="text-xl font-bold text-neutral-500">{getInitials(item.name)}</span>
+                            )}
+                        </div>
+                        
+                        {/* Header */}
+                        <div className="flex-1 min-w-0">
+                            <div className="flex justify-between items-start">
+                                <h3 className="font-bold text-lg leading-tight truncate pr-2">{item.name}</h3>
+                                <button 
+                                    onClick={() => onToggleStar(item.id)}
+                                    className={`w-8 h-8 flex items-center justify-center rounded-full transition ${item.is_starred ? 'text-brand-red' : 'text-neutral-600'}`}
+                                >
+                                    <i className={`fa-${item.is_starred ? 'solid' : 'regular'} fa-star`}></i>
+                                </button>
+                            </div>
+                            <p className="text-sm text-neutral-500 mt-1">{item.variations.length} Options</p>
+                        </div>
+                    </div>
+
+                    {/* Variations Loop */}
+                    <div className="space-y-3">
+                        {item.variations.map((variant) => (
+                            <div key={variant.id} className="flex items-center justify-between bg-black/30 p-2 rounded-lg">
+                                <span className="text-sm text-neutral-300 font-medium pl-2">
+                                    {variant.name || "Regular"}
+                                </span>
+                                
+                                {/* Inventory Controls */}
+                                <div className="flex items-center gap-2">
+                                    <button className="w-8 h-8 rounded bg-neutral-800 text-white flex items-center justify-center active:bg-brand-red/20">
+                                        <i className="fa-solid fa-minus text-xs"></i>
+                                    </button>
+                                    
+                                    <input 
+                                        type="number" 
+                                        className="w-12 bg-transparent text-center font-mono font-bold outline-none"
+                                        placeholder="-"
+                                    />
+                                    
+                                    <button className="w-8 h-8 rounded bg-neutral-800 text-white flex items-center justify-center active:bg-brand-red/20">
+                                        <i className="fa-solid fa-plus text-xs"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [activeTab, setActiveTab] = useState('home'); // 'home' or 'library'
+            const [items, setItems] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [searchQuery, setSearchQuery] = useState('');
+
+            // --- API CALLS ---
+            
+            const handleLogin = async (pin) => {
+                try {
+                    const res = await fetch('/api/check-pin', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ pin })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        setIsAuthenticated(true);
+                        fetchCatalog();
+                    } else {
+                        alert("Incorrect PIN");
+                    }
+                } catch (e) {
+                    alert("Connection Error");
+                }
+            };
+
+            const fetchCatalog = async () => {
+                setLoading(true);
+                try {
+                    const res = await fetch('/api/catalog');
+                    const data = await res.json();
+                    if (Array.isArray(data)) {
+                        setItems(data);
+                    }
+                } catch (e) {
+                    console.error("Fetch failed", e);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const toggleStar = async (itemId) => {
+                // Optimistic UI Update
+                setItems(prev => prev.map(item => 
+                    item.id === itemId ? {...item, is_starred: !item.is_starred} : item
+                ));
+                
+                // Backend Sync
+                await fetch('/api/toggle-star', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ item_id: itemId })
+                });
+            };
+
+            // --- FILTERING ---
+            
+            const filteredItems = useMemo(() => {
+                let result = items;
+                
+                if (activeTab === 'home') {
+                    result = result.filter(i => i.is_starred);
+                }
+                
+                if (searchQuery) {
+                    const q = searchQuery.toLowerCase();
+                    result = result.filter(i => i.name.toLowerCase().includes(q));
+                }
+                
+                return result;
+            }, [items, activeTab, searchQuery]);
+
+            // --- RENDER ---
+
+            if (!isAuthenticated) return <LoginModal onSubmit={handleLogin} />;
+
+            return (
+                <div className="flex flex-col h-full">
+                    {/* Header */}
+                    <div className="p-4 border-b border-neutral-800 bg-black/50 backdrop-blur sticky top-0 z-10">
+                        <div className="relative">
+                            <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500"></i>
+                            <input 
+                                type="text" 
+                                placeholder="Search inventory..." 
+                                className="w-full bg-neutral-900 border-none rounded-full py-3 pl-12 pr-4 text-white focus:ring-1 focus:ring-brand-red outline-none"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <div className="flex-1 overflow-y-auto p-4 pb-24">
+                        {loading ? (
+                            <div className="text-center py-12 text-neutral-500">
+                                <i className="fa-solid fa-circle-notch fa-spin text-2xl mb-2"></i>
+                                <p>Syncing with Square...</p>
+                            </div>
+                        ) : filteredItems.length === 0 ? (
+                            <div className="text-center py-12 text-neutral-500">
+                                <p>No items found.</p>
+                                {activeTab === 'home' && <p className="text-sm mt-2">Search the Library to star items.</p>}
+                            </div>
+                        ) : (
+                            filteredItems.map(item => (
+                                <ItemCard 
+                                    key={item.id} 
+                                    item={item} 
+                                    onToggleStar={toggleStar} 
+                                />
+                            ))
+                        )}
+                    </div>
+
+                    {/* Bottom Nav */}
+                    <div className="border-t border-neutral-800 bg-black safe-area-pb">
+                        <div className="flex justify-around p-4">
+                            <button 
+                                onClick={() => setActiveTab('home')}
+                                className={`flex flex-col items-center gap-1 ${activeTab === 'home' ? 'text-brand-red' : 'text-neutral-600'}`}
+                            >
+                                <i className="fa-solid fa-star text-xl"></i>
+                                <span className="text-xs font-bold">Favorites</span>
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('library')}
+                                className={`flex flex-col items-center gap-1 ${activeTab === 'library' ? 'text-brand-red' : 'text-neutral-600'}`}
+                            >
+                                <i className="fa-solid fa-list text-xl"></i>
+                                <span className="text-xs font-bold">Library</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+        </script>
+</body>
+</html>
