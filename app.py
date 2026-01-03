@@ -1,14 +1,20 @@
 import os
 import requests
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
+from dotenv import load_dotenv
+from datetime import datetime, timezone
 
-app = Flask(__name__, template_folder='templates')
+load_dotenv()
+
+app = Flask(__name__)
 
 # --- CONFIGURATION ---
 SQUARE_ACCESS_TOKEN = os.environ.get("SQUARE_ACCESS_TOKEN")
 DATABASE_URL = os.environ.get("DATABASE_URL")
-APP_PIN = os.environ.get("APP_PIN")
+# A default location ID to use if not specified in the request. You should replace this with a valid location ID from your Square account.
+SQUARE_LOCATION_ID = os.environ.get("SQUARE_LOCATION_ID")
+
 
 # Fix for Neon DB URL
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
@@ -28,88 +34,151 @@ with app.app_context():
     db.create_all()
 
 # --- SQUARE API HELPERS ---
-def get_square_catalog():
-    # Defines a function to retrieve catalog data from the Square API.
-    if not SQUARE_ACCESS_TOKEN:
-        return {"objects": []}
-    
-    url = "https://connect.squareup.com/v2/catalog/list"
-    headers = {
+
+def get_square_api_headers():
+    return {
         "Authorization": f"Bearer {SQUARE_ACCESS_TOKEN}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Square-Version": "2023-10-18"
     }
-    params = {"types": "ITEM,IMAGE"}
+
+def get_first_location_id():
+    global SQUARE_LOCATION_ID
+    if SQUARE_LOCATION_ID:
+        return SQUARE_LOCATION_ID
+    
+    url = "https://connect.squareup.com/v2/locations"
+    try:
+        response = requests.get(url, headers=get_square_api_headers())
+        response.raise_for_status()
+        locations = response.json().get('locations', [])
+        if locations:
+            SQUARE_LOCATION_ID = locations[0]['id']
+            print(f"--- Using Square Location ID: {SQUARE_LOCATION_ID} ---")
+            return SQUARE_LOCATION_ID
+        else:
+            raise Exception("No locations found in Square account.")
+    except Exception as e:
+        print(f"Error fetching Square locations: {e}")
+        return None
+
+
+def get_full_catalog_with_inventory():
+    # 1. Fetch Catalog Items, Images, and Categories
+    url = "https://connect.squareup.com/v2/catalog/list"
+    params = {"types": "ITEM,IMAGE,CATEGORY"}
     
     try:
-        response = requests.get(url, headers=headers, params=params)
+        response = requests.get(url, headers=get_square_api_headers(), params=params)
         response.raise_for_status()
-        return response.json()
+        catalog = response.json().get('objects', [])
     except Exception as e:
-        print(f"Square API Error: {e}")
-        return {"objects": []}
+        print(f"Square API Error fetching catalog: {e}")
+        return [], {}
 
-def format_items_for_frontend(catalog_data):
-    items = []
-    image_map = {}
-    
-    for obj in catalog_data.get('objects', []):
-        if obj['type'] == 'IMAGE':
-            image_map[obj['id']] = obj['image_data']['url']
-
-    for obj in catalog_data.get('objects', []):
+    # 2. Extract variation IDs for inventory check
+    variation_ids = []
+    for obj in catalog:
         if obj['type'] == 'ITEM':
-            item_data = obj.get('item_data', {})
-            image_id = item_data.get('image_ids', [None])[0]
+            for var in obj.get('item_data', {}).get('variations', []):
+                variation_ids.append(var['id'])
+
+    if not variation_ids:
+        return [], {}
+
+    # 3. Fetch Inventory Counts for all variations
+    url = "https://connect.squareup.com/v2/inventory/counts/batch-retrieve"
+    inventory_payload = {"catalog_object_ids": variation_ids}
+    inventory_counts = {}
+    try:
+        response = requests.post(url, headers=get_square_api_headers(), json=inventory_payload)
+        response.raise_for_status()
+        counts = response.json().get('counts', [])
+        for count in counts:
+            # We only care about 'IN_STOCK'
+            if count.get('state') == 'IN_STOCK':
+                inventory_counts[count['catalog_object_id']] = int(count['quantity'])
+    except Exception as e:
+        print(f"Square API Error fetching inventory: {e}")
+        # Continue without inventory data if this fails
+
+    return catalog, inventory_counts
+
+def format_data_for_frontend(catalog, inventory_counts):
+    items_map = {}
+    image_map = {obj['id']: obj['image_data']['url'] for obj in catalog if obj['type'] == 'IMAGE'}
+    category_map = {obj['id']: obj['category_data']['name'] for obj in catalog if obj['type'] == 'CATEGORY'}
+
+    for obj in catalog:
+        if obj['type'] == 'ITEM':
+            item_data = obj['item_data']
+            item_id = obj['id']
+
+            # Determine product type
+            is_complex = len(item_data.get('variations', [])) > 1
             
-            variations = []
+            variations_data = []
             for var in item_data.get('variations', []):
-                var_data = var.get('item_variation_data', {})
-                variations.append({
-                    "id": var['id'],
-                    "name": var_data.get('name'),
-                    "sku": var_data.get('sku', '')
+                var_id = var['id']
+                variations_data.append({
+                    "id": var_id,
+                    "name": var['item_variation_data'].get('name', 'Regular'),
+                    "quantity": inventory_counts.get(var_id, 0)
                 })
 
-            items.append({
-                "id": obj['id'],
+            # For simple products, we'll store quantity at the top level.
+            simple_quantity = None
+            if not is_complex and variations_data:
+                simple_quantity = variations_data[0]['quantity']
+
+            items_map[item_id] = {
+                "id": item_id,
                 "name": item_data.get('name'),
-                "category_id": item_data.get('category_id'),
-                "image_url": image_map.get(image_id),
-                "variations": variations
-            })
-    return items
+                "category": category_map.get(item_data.get('category_id')),
+                "imageUrl": image_map.get(item_data.get('image_ids', [None])[0]),
+                "isStarred": False, # Placeholder, will be updated later
+                "type": 'Complex' if is_complex else 'Simple',
+                "variations": variations_data if is_complex else None,
+                "quantity": simple_quantity if not is_complex else None
+            }
+            
+    return list(items_map.values())
 
 # --- ROUTES ---
-@app.route('/')
-def index():
-    return render_template('index.html')
 
-@app.route('/api/check-pin', methods=['POST'])
-def check_pin():
-    data = request.json
-    if str(data.get('pin')) == str(APP_PIN):
-        return jsonify({"success": True})
-    return jsonify({"success": False}), 401
+@app.route('/api/inventory')
+def api_inventory():
+    # Ensure we have a location ID to work with
+    if not SQUARE_LOCATION_ID:
+        if not get_first_location_id():
+            return jsonify({"error": "Could not determine Square Location ID."}), 500
 
-@app.route('/api/catalog')
-def api_catalog():
-    raw_data = get_square_catalog()
-    clean_items = format_items_for_frontend(raw_data)
+    catalog, inventory = get_full_catalog_with_inventory()
+    if not catalog:
+        return jsonify([])
+
+    clean_items = format_data_for_frontend(catalog, inventory)
     
+    # Add favorite status
     try:
-        favorites = [f.item_id for f in Favorite.query.all()]
+        favorites = {f.item_id for f in Favorite.query.all()}
         for item in clean_items:
-            item['is_starred'] = item['id'] in favorites
-    except:
-        pass
+            if item['id'] in favorites:
+                item['isStarred'] = True
+    except Exception as e:
+        print(f"Database error fetching favorites: {e}")
+        # Continue without favorites if DB fails
     
     return jsonify(clean_items)
+
 
 @app.route('/api/toggle-star', methods=['POST'])
 def toggle_star():
     data = request.json
-    item_id = data.get('item_id')
-    
+    item_id = data.get('id')
+    if not item_id:
+        return jsonify({"error": "Item ID is required"}), 400
+
     existing = Favorite.query.filter_by(item_id=item_id).first()
     if existing:
         db.session.delete(existing)
@@ -122,6 +191,58 @@ def toggle_star():
     db.session.commit()
     return jsonify({"success": True, "is_starred": starred})
 
+
+@app.route('/api/inventory/update', methods=['POST'])
+def batch_update_inventory():
+    changes = request.json.get('changes')
+    if not changes:
+        return jsonify({"error": "No changes provided"}), 400
+
+    if not SQUARE_LOCATION_ID:
+        return jsonify({"error": "Server is not configured with a Square Location ID."}), 500
+
+    # idempotency_key ensures the request is not processed multiple times
+    idempotency_key = request.headers.get('Idempotency-Key')
+    if not idempotency_key:
+         return jsonify({"error": "Idempotency-Key header is required"}), 400
+
+    url = "https://connect.squareup.com/v2/inventory/changes/batch-create"
+    
+    square_changes = []
+    for change in changes:
+        square_changes.append({
+            "type": "ADJUSTMENT",
+            "adjustment": {
+                "catalog_object_id": change['variationId'],
+                "from_state": "IN_STOCK",
+                "to_state": "IN_STOCK",
+                "location_id": SQUARE_LOCATION_ID,
+                "quantity": str(change['quantity']),
+                "occurred_at": datetime.now(timezone.utc).isoformat()
+            }
+        })
+
+    payload = {
+        "idempotency_key": idempotency_key,
+        "changes": square_changes,
+        "ignore_unchanged_counts": True
+    }
+
+    try:
+        response = requests.post(url, headers=get_square_api_headers(), json=payload)
+        response.raise_for_status()
+        return jsonify({"success": True, "data": response.json()})
+    except requests.exceptions.HTTPError as e:
+        error_details = e.response.json()
+        print(f"Square API Error updating inventory: {error_details}")
+        return jsonify({"error": "Failed to update Square inventory", "details": error_details}), e.response.status_code
+    except Exception as e:
+        print(f"Generic error updating inventory: {e}")
+        return jsonify({"error": "An unexpected error occurred."}), 500
+
+
 if __name__ == '__main__':
+    # Get location ID on startup
+    get_first_location_id()
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)

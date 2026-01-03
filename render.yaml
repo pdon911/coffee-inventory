@@ -1,0 +1,26 @@
+# render.yaml
+# This file configures the services for your application on Render.
+# It defines a static frontend service and a Python backend service.
+
+services:
+  # Frontend Service (React with Vite)
+  - type: web
+    name: frontend
+    env: static
+    # Build command for the frontend
+    buildCommand: npm install && npm run build
+    # Directory containing the static assets after build
+    staticPublishPath: ./dist
+    # Rewrite rule to proxy API requests to the backend
+    rewrites:
+      - source: /api/:path*
+        destination: https://coffee-inventory-fhsh.onrender.com/api/:path*
+
+  # Backend Service (Python with Flask/Gunicorn)
+  - type: web
+    name: backend # You can rename this service
+    env: python
+    # Build command for the backend
+    buildCommand: pip install -r requirements.txt
+    # Start command for the backend
+    startCommand: gunicorn app:app

@@ -1,0 +1,8 @@
+Role: Senior Python Flask Developer.
+Stack: Python, Flask, Jinja2, Square API, Render.
+Style: "Coffee Villain" (Black/White/Red, edgy).
+Rules:
+- Always use 'app.py' as the entry point.
+- Use environment variables for API keys.
+- When using Square API, minimize API calls (batching/debounce).
+- Keep CSS simple and consistent with the existing style.css.

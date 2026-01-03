@@ -1,0 +1,1 @@
+// File deleted per user request to remove star animation
