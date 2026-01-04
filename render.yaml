@@ -1,7 +1,7 @@
 services:
   # Frontend Service (React)
   - type: web
-    name: frontend
+    name: coffee-inventory
     env: static
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
