@@ -106,7 +106,11 @@ def get_full_catalog_with_inventory():
 
 def format_data_for_frontend(catalog, inventory_counts):
     items_map = {}
-    image_map = {obj['id']: obj['image_data']['url'] for obj in catalog if obj['type'] == 'IMAGE'}
+    image_map = {
+        obj['id']: obj['image_data']['url'] 
+        for obj in catalog 
+        if obj['type'] == 'IMAGE' and obj.get('image_data', {}).get('url')
+    }
     category_map = {obj['id']: obj['category_data']['name'] for obj in catalog if obj['type'] == 'CATEGORY'}
 
     for obj in catalog:
@@ -131,14 +135,29 @@ def format_data_for_frontend(catalog, inventory_counts):
             if not is_complex and variations_data:
                 simple_quantity = variations_data[0]['quantity']
 
+            # Find the first available image URL
+            image_url = None
+            # 1. Check the main item for images
+            if item_data.get('image_ids'):
+                image_url = image_map.get(item_data['image_ids'][0])
+            
+            # 2. If no image yet, check the variations
+            if not image_url:
+                for var in item_data.get('variations', []):
+                    var_data = var.get('item_variation_data', {})
+                    if var_data.get('image_ids'):
+                        image_url = image_map.get(var_data['image_ids'][0])
+                        if image_url:
+                            break # Stop once we find the first image
+
             items_map[item_id] = {
                 "id": item_id,
                 "name": item_data.get('name'),
                 "category": category_map.get(item_data.get('category_id')),
-                "imageUrl": image_map.get(item_data.get('image_ids', [None])[0]),
+                "imageUrl": image_url,
                 "isStarred": False, # Placeholder, will be updated later
                 "type": 'Complex' if is_complex else 'Simple',
-                "variations": variations_data if is_complex else None,
+                "variations": variations_data,
                 "quantity": simple_quantity if not is_complex else None
             }
             

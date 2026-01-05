@@ -16,205 +16,124 @@ interface ProductCardProps {
 
 
 export const ProductCard: React.FC<ProductCardProps> = ({ product, onToggleStar, onUpdateQuantity }) => {
-
   const [isHolding, setIsHolding] = useState(false);
-
   const [isTriggered, setIsTriggered] = useState(false);
-
   const [justStarred, setJustStarred] = useState(false);
-
   
-
   const preHoldTimer = useRef<number | null>(null);
-
   const holdTimer = useRef<number | null>(null);
-
-
+  const touchStartPos = useRef<{ x: number, y: number } | null>(null);
 
   const PRE_HOLD_DELAY = 100; 
-
   const TOTAL_HOLD_DURATION = 500; 
-
   const EFFECTIVE_HOLD = TOTAL_HOLD_DURATION - PRE_HOLD_DELAY;
 
-
-
   const triggerHaptic = (ms: number) => {
-
     if ('vibrate' in navigator) {
-
       navigator.vibrate(ms);
-
     }
-
   };
-
-
 
   const startHold = (e: React.MouseEvent | React.TouchEvent) => {
-
     // Only respond to primary mouse button
-
     if ('button' in e && e.button !== 0) return;
-
     
-
+    if ('touches' in e) {
+      touchStartPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+    
     cleanupTimers();
-
     preHoldTimer.current = window.setTimeout(() => {
-
       setIsHolding(true);
-
       setIsTriggered(false);
-
       
-
       holdTimer.current = window.setTimeout(() => {
-
         handleTrigger();
-
       }, EFFECTIVE_HOLD);
-
     }, PRE_HOLD_DELAY);
-
   };
-
-
 
   const cleanupTimers = () => {
-
     if (preHoldTimer.current) window.clearTimeout(preHoldTimer.current);
-
     if (holdTimer.current) window.clearTimeout(holdTimer.current);
-
     preHoldTimer.current = null;
-
     holdTimer.current = null;
-
   };
-
-
 
   const endHold = () => {
-
     setIsHolding(false);
-
     cleanupTimers();
-
+    touchStartPos.current = null;
   };
 
+  const handleMove = (e: React.TouchEvent) => {
+    if (!touchStartPos.current) return;
 
+    const deltaX = Math.abs(e.touches[0].clientX - touchStartPos.current.x);
+    const deltaY = Math.abs(e.touches[0].clientY - touchStartPos.current.y);
+
+    // If moved more than 10px in any direction, cancel the hold
+    if (deltaX > 10 || deltaY > 10) {
+      endHold();
+    }
+  };
 
   const handleTrigger = () => {
-
     triggerHaptic(65);
-
     setIsTriggered(true);
-
     if (!product.isStarred) {
-
       setJustStarred(true);
-
     }
-
     onToggleStar(product.id);
-
     
-
     setTimeout(() => {
-
       setIsHolding(false);
-
       setIsTriggered(false);
-
     }, 150);
-
   };
 
-
-
   useEffect(() => {
-
     if (!product.isStarred) {
-
       setJustStarred(false);
-
     }
-
   }, [product.isStarred]);
 
-
-
   useEffect(() => {
-
     return () => cleanupTimers();
-
   }, []);
 
-
-
   const getInitials = (name: string) => {
-
     return name
-
       .split(' ')
-
       .map(n => n[0])
-
       .slice(0, 2)
-
       .join('')
-
       .toUpperCase();
-
   };
 
-
-
   return (
-
     <div className="relative w-full select-none bg-transparent">
-
       <div className="relative z-10 py-4 flex flex-col w-full">
-
         
-
         {/* Top Row - Grid with explicit min-w-0 on the first column to allow truncation */}
-
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-1 w-full overflow-hidden">
-
             
-
             {/* Interaction Zone */}
-
             <div 
-
               className={`flex items-center gap-3 min-w-0 cursor-pointer rounded-sm relative overflow-hidden transition-all ease-linear`}
-
               style={{
-
                 transform: isHolding && !isTriggered ? 'scale(0.95)' : 'scale(1)',
-
                 transitionDuration: isHolding && !isTriggered ? `${EFFECTIVE_HOLD}ms` : '150ms',
-
                 transitionTimingFunction: isHolding && !isTriggered ? 'linear' : 'cubic-bezier(0.175, 0.885, 0.32, 1.275)'
-
               }}
-
               onTouchStart={startHold}
-
               onTouchEnd={endHold}
-
               onTouchCancel={endHold}
-
+              onTouchMove={handleMove}
               onMouseDown={startHold}
-
               onMouseUp={endHold}
-
               onMouseLeave={endHold}
-
               onContextMenu={(e) => e.preventDefault()}
-
             >
 
                 {isHolding && (
@@ -289,7 +208,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onToggleStar,
 
             {/* Simple Product Controls */}
 
-            {product.type === 'Simple' && typeof product.quantity === 'number' && product.variations && product.variations.length > 0 && (
+            {product.type === 'Simple' && typeof product.quantity === 'number' && (
 
                 <div className="flex-shrink-0 z-20" onTouchStart={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
 

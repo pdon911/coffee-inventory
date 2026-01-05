@@ -257,8 +257,6 @@ const App: React.FC = () => {
   }, [products, currentView, selectedCategory, debouncedSearch, isSearchFocused, searchQuery]);
 
   const groupedFavorites = useMemo(() => {
-    if (currentView === 'LIBRARY') return [];
-    
     const favs = products.filter(p => p.isStarred || removedItems.has(p.id));
     const sortedFavs = [...favs].sort((a, b) => a.name.localeCompare(b.name));
     
@@ -268,7 +266,7 @@ const App: React.FC = () => {
         items: sortedFavs.filter(p => p.category === cat)
       }))
       .filter(group => group.items.length > 0);
-  }, [products, currentView, removedItems, categories]);
+  }, [products, removedItems, categories]);
 
   const showHeader = currentView === 'LIBRARY';
   const isNavHidden = isAnyInputFocused || (searchQuery.trim().length > 0 && currentView === 'LIBRARY');
