@@ -28,28 +28,29 @@ const App: React.FC = () => {
   const lastScrollY = useRef(0);
   const removalTimersRef = useRef<Record<string, number[]>>({});
 
+  // --- Data Fetching ---
+  const fetchInventory = useCallback(async () => {
+    try {
+      const response = await fetch('/api/inventory');
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      const data: Product[] = await response.json();
+      setProducts(data);
+      
+      const uniqueCategories = [...new Set(data.map(p => p.category || "Uncategorized"))] as Category[];
+      setCategories(uniqueCategories);
+
+    } catch (error) {
+      console.error("Failed to fetch inventory:", error);
+      setSaveError("Could not load inventory.");
+    }
+  }, []);
+
   // --- Initial Data Load ---
   useEffect(() => {
-    const fetchInventory = async () => {
-      try {
-        const response = await fetch('/api/inventory');
-        if (!response.ok) {
-          throw new Error('Network response was not ok');
-        }
-        const data: Product[] = await response.json();
-        setProducts(data);
-        
-        // Dynamically populate categories
-        const uniqueCategories = [...new Set(data.map(p => p.category || "Uncategorized"))] as Category[];
-        setCategories(uniqueCategories);
-
-      } catch (error) {
-        console.error("Failed to fetch inventory:", error);
-        // Handle error state in UI if needed
-      }
-    };
     fetchInventory();
-  }, []);
+  }, [fetchInventory]);
 
   // --- Debounced Batch Saving ---
   useEffect(() => {
@@ -87,13 +88,17 @@ const App: React.FC = () => {
       } catch (error: any) {
         setSaveError(error.message || "An error occurred.");
         setTimeout(() => setSaveError(null), 5000); // Show error for 5s
+        
+        // On failure, refetch to revert optimistic updates
+        fetchInventory();
+
       } finally {
         setIsSaving(false);
       }
     }, 2000); // 2-second debounce
 
     return () => clearTimeout(handler);
-  }, [pendingChanges]);
+  }, [pendingChanges, fetchInventory]);
 
 
   useEffect(() => {

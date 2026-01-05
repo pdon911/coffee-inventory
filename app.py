@@ -4,10 +4,18 @@ from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 from datetime import datetime, timezone
+import time
+import threading
 
 load_dotenv()
 
 app = Flask(__name__)
+
+# --- CACHE ---
+_cache = None
+_cache_last_updated = 0
+CACHE_DURATION = 300 # 5 minutes
+
 
 # --- CONFIGURATION ---
 SQUARE_ACCESS_TOKEN = os.environ.get("SQUARE_ACCESS_TOKEN")
@@ -64,17 +72,27 @@ def get_first_location_id():
 
 
 def get_full_catalog_with_inventory():
-    # 1. Fetch Catalog Items, Images, and Categories
+    # 1. Fetch all pages of Catalog Items, Images, and Categories
+    catalog = []
+    cursor = None
     url = "https://connect.squareup.com/v2/catalog/list"
-    params = {"types": "ITEM,IMAGE,CATEGORY"}
     
-    try:
-        response = requests.get(url, headers=get_square_api_headers(), params=params)
-        response.raise_for_status()
-        catalog = response.json().get('objects', [])
-    except Exception as e:
-        print(f"Square API Error fetching catalog: {e}")
-        return [], {}
+    while True:
+        params = {"types": "ITEM,IMAGE,CATEGORY"}
+        if cursor:
+            params['cursor'] = cursor
+
+        try:
+            response = requests.get(url, headers=get_square_api_headers(), params=params)
+            response.raise_for_status()
+            data = response.json()
+            catalog.extend(data.get('objects', []))
+            cursor = data.get('cursor')
+            if not cursor:
+                break  # Exit loop if no more pages
+        except Exception as e:
+            print(f"Square API Error fetching catalog: {e}")
+            return [], {}
 
     # 2. Extract variation IDs for inventory check
     variation_ids = []
@@ -86,22 +104,24 @@ def get_full_catalog_with_inventory():
     if not variation_ids:
         return [], {}
 
-    # 3. Fetch Inventory Counts for all variations
-    url = "https://connect.squareup.com/v2/inventory/counts/batch-retrieve"
-    inventory_payload = {"catalog_object_ids": variation_ids}
+    # 3. Fetch Inventory Counts in chunks of 1000
     inventory_counts = {}
-    try:
-        response = requests.post(url, headers=get_square_api_headers(), json=inventory_payload)
-        response.raise_for_status()
-        counts = response.json().get('counts', [])
-        for count in counts:
-            # We only care about 'IN_STOCK'
-            if count.get('state') == 'IN_STOCK':
-                inventory_counts[count['catalog_object_id']] = int(count['quantity'])
-    except Exception as e:
-        print(f"Square API Error fetching inventory: {e}")
-        # Continue without inventory data if this fails
-
+    url = "https://connect.squareup.com/v2/inventory/counts/batch-retrieve"
+    
+    for i in range(0, len(variation_ids), 1000):
+        chunk = variation_ids[i:i + 1000]
+        inventory_payload = {"catalog_object_ids": chunk}
+        try:
+            response = requests.post(url, headers=get_square_api_headers(), json=inventory_payload)
+            response.raise_for_status()
+            counts = response.json().get('counts', [])
+            for count in counts:
+                if count.get('state') == 'IN_STOCK':
+                    inventory_counts[count['catalog_object_id']] = int(count['quantity'])
+        except Exception as e:
+            print(f"Square API Error fetching inventory chunk: {e}")
+            # Continue without inventory data for this chunk if it fails
+            
     return catalog, inventory_counts
 
 def search_for_image(item_data, image_map):
@@ -121,85 +141,59 @@ def search_for_image(item_data, image_map):
                     return image_map[image_id]
     return None
 
+def get_and_process_data():
+    """
+    Fetches the full catalog from Square, formats it for the frontend,
+    and returns it.
+    """
+    print("--- Fetching fresh data from Square API ---")
+    catalog, inventory = get_full_catalog_with_inventory()
+    if not catalog:
+        return []
+    
+    clean_items = format_data_for_frontend(catalog, inventory)
+    return clean_items
 
-def format_data_for_frontend(catalog, inventory_counts):
-    items_map = {}
-    image_map = {
-        obj['id']: obj['image_data']['url'] 
-        for obj in catalog 
-        if obj['type'] == 'IMAGE' and obj.get('image_data', {}).get('url')
-    }
-    category_map = {obj['id']: obj['category_data']['name'] for obj in catalog if obj['type'] == 'CATEGORY'}
 
-    for obj in catalog:
-        if obj['type'] == 'ITEM':
-            item_data = obj['item_data']
-            
-            # Skip archived items
-            if item_data.get('is_archived'):
-                continue
-
-            item_id = obj['id']
-
-            # Determine product type
-            is_complex = len(item_data.get('variations', [])) > 1
-            
-            variations_data = []
-            for var in item_data.get('variations', []):
-                var_id = var['id']
-                variations_data.append({
-                    "id": var_id,
-                    "name": var['item_variation_data'].get('name', 'Regular'),
-                    "quantity": inventory_counts.get(var_id, 0)
-                })
-
-            # For simple products, we'll store quantity at the top level.
-            simple_quantity = None
-            if not is_complex and variations_data:
-                simple_quantity = variations_data[0]['quantity']
-
-            # Find the first available image URL
-            image_url = search_for_image(item_data, image_map)
-
-            items_map[item_id] = {
-                "id": item_id,
-                "name": item_data.get('name'),
-                "category": category_map.get(item_data.get('category_id')) or "Uncategorized",
-                "thumbnail_url": image_url,
-                "isStarred": False, # Placeholder, will be updated later
-                "type": 'Complex' if is_complex else 'Simple',
-                "variations": variations_data,
-                "quantity": simple_quantity if not is_complex else None
-            }
-            
-    return list(items_map.values())
 
 # --- ROUTES ---
 
 @app.route('/api/inventory')
 def api_inventory():
-    # Ensure we have a location ID to work with
-    if not SQUARE_LOCATION_ID:
-        if not get_first_location_id():
-            return jsonify({"error": "Could not determine Square Location ID."}), 500
-
-    catalog, inventory = get_full_catalog_with_inventory()
-    if not catalog:
-        return jsonify([])
-
-    clean_items = format_data_for_frontend(catalog, inventory)
+    global _cache, _cache_last_updated
     
-    # Add favorite status
+    # Check if cache is valid
+    if _cache and (time.time() - _cache_last_updated < CACHE_DURATION):
+        print("--- Serving from cache ---")
+        clean_items = _cache
+    else:
+        clean_items = get_and_process_data()
+        _cache = clean_items
+        _cache_last_updated = time.time()
+
+    # Add favorite status (this needs to be fresh on every request)
     try:
         favorites = {f.item_id for f in Favorite.query.all()}
         for item in clean_items:
-            if item['id'] in favorites:
-                item['isStarred'] = True
+            # Default to False, then set to True if in favorites
+            item['isStarred'] = item['id'] in favorites
     except Exception as e:
         print(f"Database error fetching favorites: {e}")
         return jsonify({"error": "Database error fetching favorites"}), 500
     
     return jsonify(clean_items)
+
+@app.route('/api/inventory/sync', methods=['POST'])
+def sync_inventory():
+    """Forces a refresh of the server's cache from the Square API."""
+    global _cache, _cache_last_updated
+    
+    clean_items = get_and_process_data()
+    _cache = clean_items
+    _cache_last_updated = time.time()
+    
+    return jsonify({"success": True, "message": "Cache has been refreshed."})
+
 
 
 @app.route('/api/toggle-star', methods=['POST'])
@@ -271,8 +265,27 @@ def batch_update_inventory():
         return jsonify({"error": "An unexpected error occurred."}), 500
 
 
+def background_sync():
+    """A simple background thread to keep the cache warm."""
+    print("--- Starting background sync thread ---")
+    while True:
+        with app.app_context(): # Create an app context for the db call
+            global _cache, _cache_last_updated
+            clean_items = get_and_process_data()
+            _cache = clean_items
+            _cache_last_updated = time.time()
+            print(f"--- Background sync completed. {len(_cache)} items cached. ---")
+        time.sleep(CACHE_DURATION)
+
+
 if __name__ == '__main__':
-    # Get location ID on startup
-    get_first_location_id()
+    # Get location ID on startup before starting the sync thread
+    with app.app_context():
+        get_first_location_id()
+    
+    # Start the background thread
+    sync_thread = threading.Thread(target=background_sync, daemon=True)
+    sync_thread.start()
+
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
