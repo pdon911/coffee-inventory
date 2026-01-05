@@ -40,7 +40,7 @@ const App: React.FC = () => {
         setProducts(data);
         
         // Dynamically populate categories
-        const uniqueCategories = [...new Set(data.map(p => p.category).filter(Boolean))] as Category[];
+        const uniqueCategories = [...new Set(data.map(p => p.category || "Uncategorized"))] as Category[];
         setCategories(uniqueCategories);
 
       } catch (error) {

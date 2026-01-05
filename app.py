@@ -134,6 +134,11 @@ def format_data_for_frontend(catalog, inventory_counts):
     for obj in catalog:
         if obj['type'] == 'ITEM':
             item_data = obj['item_data']
+            
+            # Skip archived items
+            if item_data.get('is_archived'):
+                continue
+
             item_id = obj['id']
 
             # Determine product type
