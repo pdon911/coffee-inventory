@@ -1,4 +1,4 @@
-export type Category = 'Coffee' | 'Pastry' | 'Merch';
+export type Category = string;
 
 export interface Variation {
   id: string;

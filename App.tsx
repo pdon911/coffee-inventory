@@ -7,7 +7,7 @@ import { Search, List, Star, X, RotateCcw } from 'lucide-react';
 
 const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
-  const [currentView, setCurrentView] = useState<ViewState>('LIBRARY');
+  const [currentView, setCurrentView] = useState<ViewState>('HOME');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isAnyInputFocused, setIsAnyInputFocused] = useState(false);
@@ -258,15 +258,25 @@ const App: React.FC = () => {
 
   const groupedFavorites = useMemo(() => {
     const favs = products.filter(p => p.isStarred || removedItems.has(p.id));
-    const sortedFavs = [...favs].sort((a, b) => a.name.localeCompare(b.name));
     
-    return categories
-      .map(cat => ({
-        category: cat,
-        items: sortedFavs.filter(p => p.category === cat)
-      }))
-      .filter(group => group.items.length > 0);
-  }, [products, removedItems, categories]);
+    if (favs.length === 0) return [];
+
+    const groups: { [key: string]: Product[] } = {};
+    for (const item of favs) {
+        const category = item.category || 'Uncategorized';
+        if (!groups[category]) {
+            groups[category] = [];
+        }
+        groups[category].push(item);
+    }
+
+    return Object.entries(groups)
+        .map(([category, items]) => ({
+            category,
+            items: items.sort((a, b) => a.name.localeCompare(b.name))
+        }))
+        .sort((a, b) => a.category.localeCompare(b.category));
+  }, [products, removedItems]);
 
   const showHeader = currentView === 'LIBRARY';
   const isNavHidden = isAnyInputFocused || (searchQuery.trim().length > 0 && currentView === 'LIBRARY');

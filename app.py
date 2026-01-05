@@ -159,7 +159,7 @@ def format_data_for_frontend(catalog, inventory_counts):
             items_map[item_id] = {
                 "id": item_id,
                 "name": item_data.get('name'),
-                "category": category_map.get(item_data.get('category_id')),
+                "category": category_map.get(item_data.get('category_id')) or "Uncategorized",
                 "thumbnail_url": image_url,
                 "isStarred": False, # Placeholder, will be updated later
                 "type": 'Complex' if is_complex else 'Simple',
