@@ -146,21 +146,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onToggleStar,
 
                 {/* Thumbnail */}
 
-                <div className="flex-shrink-0 relative pointer-events-none z-10 ml-1">
+                                <div className="flex-shrink-0 relative pointer-events-none z-10 ml-1">
 
-                    {product.imageUrl ? (
+                                    {product.thumbnail_url ? (
 
-                        <img 
+                                        <img 
 
-                          src={product.imageUrl} 
+                                          src={product.thumbnail_url} 
 
-                          alt={product.name} 
+                                          alt={product.name} 
 
-                          className="w-11 h-11 object-cover bg-villain-gray rounded-sm border border-white/5"
+                                          className="w-11 h-11 object-cover bg-villain-gray rounded-sm border border-white/5"
 
-                        />
+                                        />
 
-                    ) : (
+                                    ) : (
 
                         <div className="w-11 h-11 bg-villain-gray flex items-center justify-center rounded-sm border border-white/5">
 

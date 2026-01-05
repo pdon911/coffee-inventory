@@ -104,6 +104,24 @@ def get_full_catalog_with_inventory():
 
     return catalog, inventory_counts
 
+def search_for_image(item_data, image_map):
+    """Find the thumbnail URL for an item, checking variations if needed."""
+    # 1. Check the main item for images
+    if item_data.get('image_ids'):
+        for image_id in item_data['image_ids']:
+            if image_id in image_map:
+                return image_map[image_id]
+    
+    # 2. If no image yet, check the variations
+    for var in item_data.get('variations', []):
+        var_data = var.get('item_variation_data', {})
+        if var_data.get('image_ids'):
+            for image_id in var_data['image_ids']:
+                if image_id in image_map:
+                    return image_map[image_id]
+    return None
+
+
 def format_data_for_frontend(catalog, inventory_counts):
     items_map = {}
     image_map = {
@@ -136,25 +154,13 @@ def format_data_for_frontend(catalog, inventory_counts):
                 simple_quantity = variations_data[0]['quantity']
 
             # Find the first available image URL
-            image_url = None
-            # 1. Check the main item for images
-            if item_data.get('image_ids'):
-                image_url = image_map.get(item_data['image_ids'][0])
-            
-            # 2. If no image yet, check the variations
-            if not image_url:
-                for var in item_data.get('variations', []):
-                    var_data = var.get('item_variation_data', {})
-                    if var_data.get('image_ids'):
-                        image_url = image_map.get(var_data['image_ids'][0])
-                        if image_url:
-                            break # Stop once we find the first image
+            image_url = search_for_image(item_data, image_map)
 
             items_map[item_id] = {
                 "id": item_id,
                 "name": item_data.get('name'),
                 "category": category_map.get(item_data.get('category_id')),
-                "imageUrl": image_url,
+                "thumbnail_url": image_url,
                 "isStarred": False, # Placeholder, will be updated later
                 "type": 'Complex' if is_complex else 'Simple',
                 "variations": variations_data,
@@ -186,7 +192,7 @@ def api_inventory():
                 item['isStarred'] = True
     except Exception as e:
         print(f"Database error fetching favorites: {e}")
-        # Continue without favorites if DB fails
+        return jsonify({"error": "Database error fetching favorites"}), 500
     
     return jsonify(clean_items)
 

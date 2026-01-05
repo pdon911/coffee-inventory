@@ -380,7 +380,7 @@ const App: React.FC = () => {
         {currentView === 'HOME' && (
           <div className="mb-8">
             <h1 className="text-4xl font-black uppercase font-display tracking-tight text-white">
-              Inventory
+              Favorites
             </h1>
             <div className="w-12 h-1 bg-villain-red mt-2" />
           </div>

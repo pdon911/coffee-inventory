@@ -9,12 +9,12 @@ export interface Variation {
 export interface Product {
   id: string;
   name: string;
-  category: Category;
-  imageUrl?: string;
+  category: Category | null;
+  thumbnail_url?: string;
   isStarred: boolean;
   type: 'Simple' | 'Complex';
-  variations?: Variation[]; // For complex items
-  quantity?: number; // For simple items
+  variations?: Variation[];
+  quantity: number | null; // Only for simple products
 }
 
 
