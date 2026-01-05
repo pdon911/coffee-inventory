@@ -265,17 +265,17 @@ def batch_update_inventory():
         return jsonify({"error": "An unexpected error occurred."}), 500
 
 
-def background_sync():
-    """A simple background thread to keep the cache warm."""
-    print("--- Starting background sync thread ---")
-    while True:
-        with app.app_context(): # Create an app context for the db call
-            global _cache, _cache_last_updated
-            clean_items = get_and_process_data()
-            _cache = clean_items
-            _cache_last_updated = time.time()
-            print(f"--- Background sync completed. {len(_cache)} items cached. ---")
-        time.sleep(CACHE_DURATION)
+# def background_sync():
+#     """A simple background thread to keep the cache warm."""
+#     print("--- Starting background sync thread ---")
+#     while True:
+#         with app.app_context(): # Create an app context for the db call
+#             global _cache, _cache_last_updated
+#             clean_items = get_and_process_data()
+#             _cache = clean_items
+#             _cache_last_updated = time.time()
+#             print(f"--- Background sync completed. {len(_cache)} items cached. ---")
+#         time.sleep(CACHE_DURATION)
 
 
 if __name__ == '__main__':
@@ -283,9 +283,9 @@ if __name__ == '__main__':
     with app.app_context():
         get_first_location_id()
     
-    # Start the background thread
-    sync_thread = threading.Thread(target=background_sync, daemon=True)
-    sync_thread.start()
+    # # Start the background thread
+    # sync_thread = threading.Thread(target=background_sync, daemon=True)
+    # sync_thread.start()
 
     port = int(os.environ.get('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
