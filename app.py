@@ -141,6 +141,59 @@ def search_for_image(item_data, image_map):
                     return image_map[image_id]
     return None
 
+def format_data_for_frontend(catalog, inventory_counts):
+    items_map = {}
+    image_map = {
+        obj['id']: obj.get('image_data', {}).get('url')
+        for obj in catalog
+        if obj['type'] == 'IMAGE' and obj.get('image_data', {}).get('url')
+    }
+    category_map = {
+        obj['id']: obj.get('category_data', {}).get('name')
+        for obj in catalog
+        if obj['type'] == 'CATEGORY' and obj.get('category_data', {}).get('name')
+    }
+
+    for obj in catalog:
+        if obj['type'] == 'ITEM':
+            item_data = obj.get('item_data', {})
+            
+            if item_data.get('is_archived'):
+                continue
+
+            item_id = obj['id']
+
+            is_complex = len(item_data.get('variations', [])) > 1
+            
+            variations_data = []
+            for var in item_data.get('variations', []):
+                var_data = var.get('item_variation_data', {})
+                var_id = var['id']
+                variations_data.append({
+                    "id": var_id,
+                    "name": var_data.get('name', 'Regular'),
+                    "quantity": inventory_counts.get(var_id, 0)
+                })
+
+            simple_quantity = None
+            if not is_complex and variations_data:
+                simple_quantity = variations_data[0]['quantity']
+
+            image_url = search_for_image(item_data, image_map)
+
+            items_map[item_id] = {
+                "id": item_id,
+                "name": item_data.get('name'),
+                "category": category_map.get(item_data.get('category_id')) or "Uncategorized",
+                "thumbnail_url": image_url,
+                "isStarred": False,
+                "type": 'Complex' if is_complex else 'Simple',
+                "variations": variations_data,
+                "quantity": simple_quantity if not is_complex else None
+            }
+            
+    return list(items_map.values())
+
 def get_and_process_data():
     """
     Fetches the full catalog from Square, formats it for the frontend,
@@ -153,6 +206,7 @@ def get_and_process_data():
     
     clean_items = format_data_for_frontend(catalog, inventory)
     return clean_items
+
 
 
 
