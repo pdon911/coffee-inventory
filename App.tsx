@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Product, ViewState, Category, QuantityChange } from './types';
 import { ProductCard } from './components/ProductCard';
 import { SavingIndicator } from './components/SavingIndicator';
