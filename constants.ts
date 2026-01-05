@@ -33,31 +33,31 @@ export const MOCK_DATA: Product[] = [
     imageUrl: 'https://picsum.photos/id/431/200/200',
     isStarred: true,
     type: 'Simple',
-    quantity: 24,
+    variations: [{ id: 'v3-1', name: 'Regular', quantity: 24 }],
   },
   {
     id: 'p4',
     name: 'Chocolate Chunk Cookie',
     category: 'Pastry',
-    imageUrl: undefined, // Test fallback
+    thumbnail_url: undefined, // Test fallback
     isStarred: false,
     type: 'Simple',
-    quantity: 3, // Low stock test
+    variations: [{ id: 'v4-1', name: 'Regular', quantity: 3 }], // Low stock test
   },
   {
     id: 'p5',
     name: 'Blueberry Muffin',
     category: 'Pastry',
-    imageUrl: 'https://picsum.photos/id/493/200/200',
+    thumbnail_url: 'https://picsum.photos/id/493/200/200',
     isStarred: false,
     type: 'Simple',
-    quantity: 15,
+    variations: [{ id: 'v5-1', name: 'Regular', quantity: 15 }],
   },
   {
     id: 'p6',
     name: 'Villain Hoodie',
     category: 'Merch',
-    imageUrl: 'https://picsum.photos/id/447/200/200',
+    thumbnail_url: 'https://picsum.photos/id/447/200/200',
     isStarred: false,
     type: 'Complex',
     variations: [

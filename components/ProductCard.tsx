@@ -208,21 +208,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onToggleStar,
 
             {/* Simple Product Controls */}
 
-            {product.type === 'Simple' && typeof product.quantity === 'number' && (
+                        {product.type === 'Simple' && (
 
-                <div className="flex-shrink-0 z-20" onTouchStart={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+                            <div className="flex-shrink-0 z-20" onTouchStart={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
 
-                    <QuantityControl 
+                                <QuantityControl 
 
-                        quantity={product.quantity} 
+                                    quantity={product.variations[0].quantity} 
 
-                        onChange={(qty) => onUpdateQuantity(product.id, qty, product.variations![0].id)} 
+                                    onChange={(qty) => onUpdateQuantity(product.id, qty, product.variations[0].id)} 
 
-                    />
+                                />
 
-                </div>
+                            </div>
 
-            )}
+                        )}
 
         </div>
 

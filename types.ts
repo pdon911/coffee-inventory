@@ -1,5 +1,7 @@
 export type Category = string;
 
+export type ViewState = 'HOME' | 'LIBRARY';
+
 export interface Variation {
   id: string;
   name: string; // e.g., "340g", "2kg"
@@ -13,8 +15,7 @@ export interface Product {
   thumbnail_url?: string;
   isStarred: boolean;
   type: 'Simple' | 'Complex';
-  variations?: Variation[];
-  quantity: number | null; // Only for simple products
+  variations: Variation[];
 }
 
 

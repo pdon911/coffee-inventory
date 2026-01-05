@@ -214,15 +214,12 @@ const App: React.FC = () => {
     setProducts(prev => prev.map(p => {
       if (p.id !== productId) return p;
 
-      if (p.variations) {
-        return {
-          ...p,
-          variations: p.variations.map(v => 
-            v.id === variationId ? { ...v, quantity: newQty } : v
-          )
-        };
-      }
-      return { ...p, quantity: newQty };
+      return {
+        ...p,
+        variations: p.variations.map(v => 
+          v.id === variationId ? { ...v, quantity: newQty } : v
+        )
+      };
     }));
 
     // Queue the change for debounced saving

@@ -1,20 +1,32 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Coffee Villain Inventory
 
-# Run and deploy your AI Studio app
+This project is a simple inventory management application for a coffee shop called "Coffee Villain". It allows the user to view and manage their inventory of coffee, pastries, and merchandise.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/drive/1JLMeky_JioQfvUMU0jtrQPP7-bl9HG7K
+* View a list of all products in the inventory
+* Filter products by category
+* Mark products as "favorites" for easy access
+* Update the quantity of each product
 
-## Run Locally
+## Tech Stack
 
-**Prerequisites:**  Node.js
+* **Frontend:** React, TypeScript, Vite
+* **Backend:** Python, Flask
+* **Database:** Neon
 
+## Getting Started
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+1. **Clone the repository:**
+`git clone https://github.com/your-username/coffee-villain-inventory.git`
+
+2. **Install the dependencies:**
+`npm install`
+`pip install -r requirements.txt`
+
+3. **Run the application:**
+`npm run dev`
+
+## Deployment
+
+The application is deployed on Render. The frontend is a static site, and the backend is a Python web service.

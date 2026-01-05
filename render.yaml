@@ -11,7 +11,7 @@ services:
       - type: rewrite
         # CORRECTION 3: Use '*' for wildcards, not ':path*'
         source: /api/*
-        destination: https://coffee-inventory-fhsh.onrender.com/api/*
+        destination: http://backend/api/*
       - type: rewrite
         source: /*
         destination: /index.html

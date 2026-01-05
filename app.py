@@ -1,6 +1,6 @@
 import os
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 from datetime import datetime, timezone
@@ -175,12 +175,6 @@ def format_data_for_frontend(catalog, inventory_counts):
                     "quantity": inventory_counts.get(var_id, 0)
                 })
 
-            simple_quantity = None
-            if not is_complex and variations_data:
-                simple_quantity = variations_data[0]['quantity']
-
-            image_url = search_for_image(item_data, image_map)
-
             items_map[item_id] = {
                 "id": item_id,
                 "name": item_data.get('name'),
@@ -189,7 +183,6 @@ def format_data_for_frontend(catalog, inventory_counts):
                 "isStarred": False,
                 "type": 'Complex' if is_complex else 'Simple',
                 "variations": variations_data,
-                "quantity": simple_quantity if not is_complex else None
             }
             
     return list(items_map.values())
@@ -330,7 +323,32 @@ def batch_update_inventory():
 #             _cache_last_updated = time.time()
 #             print(f"--- Background sync completed. {len(_cache)} items cached. ---")
 #         time.sleep(CACHE_DURATION)
+@app.route('/')
+def index():
+    return send_from_directory('dist', 'index.html')
 
+@app.route('/<path:path>')
+def serve_static(path):
+    # Security: prevent access to sensitive backend files
+    if path.endswith('.py') or path.endswith('.env') or path.endswith('.db'):
+        return jsonify({"error": "Access denied"}), 403
+    return send_from_directory('dist', path)
+
+def background_sync():
+    """A simple background thread to keep the cache warm."""
+    print("--- Starting background sync thread ---")
+    while True:
+        with app.app_context(): # Create an app context for the db call
+            global _cache, _cache_last_updated
+            clean_items = get_and_process_data()
+            _cache = clean_items
+            _cache_last_updated = time.time()
+            print(f"--- Background sync completed. {len(_cache)} items cached. ---")
+        time.sleep(CACHE_DURATION)
+
+# Start the background thread on import so it runs with Gunicorn
+sync_thread = threading.Thread(target=background_sync, daemon=True)
+sync_thread.start()
 
 if __name__ == '__main__':
     # Get location ID on startup before starting the sync thread
