@@ -9,7 +9,10 @@ import threading
 
 load_dotenv()
 
-print("--- Starting Coffee Villain Backend ---")
+print("--- STARTING COFFEE VILLAIN BACKEND ---", flush=True)
+print(f"DEBUG: APP_PIN length: {len(os.environ.get('APP_PIN', ''))}", flush=True)
+print(f"DEBUG: DATABASE_URL exists: {bool(os.environ.get('DATABASE_URL'))}", flush=True)
+
 app = Flask(__name__)
 
 # --- CACHE ---
@@ -44,8 +47,15 @@ class Favorite(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     item_id = db.Column(db.String(100), unique=True, nullable=False)
 
-with app.app_context():
-    db.create_all()
+# Safely initialize database
+try:
+    with app.app_context():
+        print("DEBUG: Attempting to create database tables...", flush=True)
+        db.create_all()
+        print("DEBUG: Database initialization successful.", flush=True)
+except Exception as e:
+    print(f"ERROR: Database initialization failed: {e}", flush=True)
+    # We don't exit here so the health check and logging can still run
 
 # --- SQUARE API HELPERS ---
 
@@ -280,7 +290,19 @@ def verify_pin():
 
 @app.route('/api/health')
 def health_check():
-    return jsonify({"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()})
+    db_status = "connected"
+    try:
+        # Simple query to check DB connectivity
+        Favorite.query.first()
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+        
+    return jsonify({
+        "status": "healthy", 
+        "database": db_status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "pin_configured": bool(APP_PIN)
+    })
 
 @app.route('/api/inventory')
 def api_inventory():
