@@ -7,10 +7,10 @@ services:
     staticPublishPath: ./dist
     # CORRECTION 1: Use 'routes', not 'rewrites'
     routes:
-      # Render internal service name as host
+      # Use Render internal URL with default port 10000
       - type: rewrite
         source: /api/*
-        destination: http://backend/api/*
+        destination: http://backend:10000/api/*
       - type: rewrite
         source: /*
         destination: /index.html
@@ -20,4 +20,4 @@ services:
     name: backend
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn --bind 0.0.0.0:$PORT app:app

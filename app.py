@@ -9,6 +9,7 @@ import threading
 
 load_dotenv()
 
+print("--- Starting Coffee Villain Backend ---")
 app = Flask(__name__)
 
 # --- CACHE ---
