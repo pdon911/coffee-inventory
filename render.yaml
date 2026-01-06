@@ -7,9 +7,8 @@ services:
     staticPublishPath: ./dist
     # CORRECTION 1: Use 'routes', not 'rewrites'
     routes:
-      # CORRECTION 2: Explicitly define 'type: rewrite'
+      # Render internal service name as host
       - type: rewrite
-        # CORRECTION 3: Use '*' for wildcards, not ':path*'
         source: /api/*
         destination: http://backend/api/*
       - type: rewrite

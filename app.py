@@ -241,8 +241,8 @@ def format_data_for_frontend(catalog, inventory_counts):
 def check_pin():
     # Only protect API routes
     if request.path.startswith('/api/'):
-        # Allow the verify-pin endpoint
-        if request.path == '/api/verify-pin':
+        # Allow the verify-pin and health endpoints
+        if request.path in ['/api/verify-pin', '/api/health']:
             return
         
         # If no PIN is configured, allow all (optional, but safer to require it if configured)
@@ -255,20 +255,31 @@ def check_pin():
 
 @app.route('/api/verify-pin', methods=['POST'])
 def verify_pin():
-    data = request.json
-    pin = str(data.get('pin', '')).strip()
-    
-    if not APP_PIN:
-        print("DEBUG: PIN Verification called, but APP_PIN is not set in environment.")
-        return jsonify({"success": True, "message": "No PIN configured"})
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+            
+        pin = str(data.get('pin', '')).strip()
         
-    if pin == APP_PIN:
-        print("DEBUG: PIN Verification successful.")
-        return jsonify({"success": True})
-    else:
-        # Log basic debug info without exposing the PIN itself
-        print(f"DEBUG: PIN Verification failed. Expected Length: {len(APP_PIN)}, Received Length: {len(pin)}")
-        return jsonify({"success": False, "message": "Invalid PIN"}), 401
+        if not APP_PIN:
+            print("DEBUG: PIN Verification called, but APP_PIN is not set in environment.")
+            return jsonify({"success": True, "message": "No PIN configured"})
+            
+        if pin == APP_PIN:
+            print("DEBUG: PIN Verification successful.")
+            return jsonify({"success": True})
+        else:
+            # Log basic debug info without exposing the PIN itself
+            print(f"DEBUG: PIN Verification failed. Expected Length: {len(APP_PIN)}, Received Length: {len(pin)}")
+            return jsonify({"success": False, "message": "Invalid PIN"}), 401
+    except Exception as e:
+        print(f"ERROR in verify_pin: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/health')
+def health_check():
+    return jsonify({"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()})
 
 @app.route('/api/inventory')
 def api_inventory():

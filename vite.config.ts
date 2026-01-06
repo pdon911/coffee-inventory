@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
         react(),
         VitePWA({
           registerType: 'autoUpdate',
-          includeAssets: ['logo.png', 'favicon.ico', 'robots.txt', 'apple-touch-icon.png'],
+          includeAssets: ['logo.png'],
           manifest: {
             name: 'Coffee Villain Inventory',
             short_name: 'Villain',
