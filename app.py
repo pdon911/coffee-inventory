@@ -25,7 +25,8 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 SQUARE_LOCATION_ID = os.environ.get("SQUARE_LOCATION_ID")
 # Optional channel ID to filter by Point of Sale availability
 SQUARE_POS_CHANNEL_ID = os.environ.get("SQUARE_POS_CHANNEL_ID", "CH_z3KuPRWX9HaaCUp1nS1etFM1PHAcIE3M6AqpEUR29945o")
-APP_PIN = os.environ.get("APP_PIN")
+# Robust loading of APP_PIN: convert to string and strip whitespace
+APP_PIN = str(os.environ.get("APP_PIN", "")).strip() or None
 
 
 # Fix for Neon DB URL
@@ -248,22 +249,25 @@ def check_pin():
         if not APP_PIN:
             return
 
-        pin = request.headers.get('X-App-Pin')
+        pin = str(request.headers.get('X-App-Pin', '')).strip()
         if pin != APP_PIN:
             return jsonify({"error": "Unauthorized", "message": "Invalid PIN"}), 401
 
 @app.route('/api/verify-pin', methods=['POST'])
 def verify_pin():
     data = request.json
-    pin = data.get('pin')
-    
+    pin = str(data.get('pin', '')).strip()
     
     if not APP_PIN:
+        print("DEBUG: PIN Verification called, but APP_PIN is not set in environment.")
         return jsonify({"success": True, "message": "No PIN configured"})
         
     if pin == APP_PIN:
+        print("DEBUG: PIN Verification successful.")
         return jsonify({"success": True})
     else:
+        # Log basic debug info without exposing the PIN itself
+        print(f"DEBUG: PIN Verification failed. Expected Length: {len(APP_PIN)}, Received Length: {len(pin)}")
         return jsonify({"success": False, "message": "Invalid PIN"}), 401
 
 @app.route('/api/inventory')
