@@ -12,7 +12,8 @@ load_dotenv()
 app = Flask(__name__)
 
 # --- CACHE ---
-_cache = None
+_catalog_cache = None # Processed items with categories/images (no quantities)
+_inventory_cache = {} # var_id -> quantity
 _cache_last_updated = 0
 CACHE_DURATION = 300 # 5 minutes
 
@@ -22,6 +23,9 @@ SQUARE_ACCESS_TOKEN = os.environ.get("SQUARE_ACCESS_TOKEN")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 # A default location ID to use if not specified in the request. You should replace this with a valid location ID from your Square account.
 SQUARE_LOCATION_ID = os.environ.get("SQUARE_LOCATION_ID")
+# Optional channel ID to filter by Point of Sale availability
+SQUARE_POS_CHANNEL_ID = os.environ.get("SQUARE_POS_CHANNEL_ID", "CH_z3KuPRWX9HaaCUp1nS1etFM1PHAcIE3M6AqpEUR29945o")
+APP_PIN = os.environ.get("APP_PIN")
 
 
 # Fix for Neon DB URL
@@ -71,8 +75,9 @@ def get_first_location_id():
         return None
 
 
-def get_full_catalog_with_inventory():
-    # 1. Fetch all pages of Catalog Items, Images, and Categories
+def get_catalog_structure():
+    """Fetches all items, images, and categories to build the app's structure."""
+    print("--- Fetching Catalog Structure from Square ---")
     catalog = []
     cursor = None
     url = "https://connect.squareup.com/v2/catalog/list"
@@ -89,40 +94,35 @@ def get_full_catalog_with_inventory():
             catalog.extend(data.get('objects', []))
             cursor = data.get('cursor')
             if not cursor:
-                break  # Exit loop if no more pages
+                break
         except Exception as e:
             print(f"Square API Error fetching catalog: {e}")
-            return [], {}
+            return []
+    return catalog
 
-    # 2. Extract variation IDs for inventory check
-    variation_ids = []
-    for obj in catalog:
-        if obj['type'] == 'ITEM':
-            for var in obj.get('item_data', {}).get('variations', []):
-                variation_ids.append(var['id'])
-
+def fetch_inventory_counts(variation_ids):
+    """Fetches current inventory counts for a specific list of variation IDs."""
     if not variation_ids:
-        return [], {}
-
-    # 3. Fetch Inventory Counts in chunks of 1000
+        return {}
+        
+    print(f"--- Fetching Inventory Counts for {len(variation_ids)} variations ---")
     inventory_counts = {}
     url = "https://connect.squareup.com/v2/inventory/counts/batch-retrieve"
     
     for i in range(0, len(variation_ids), 1000):
         chunk = variation_ids[i:i + 1000]
-        inventory_payload = {"catalog_object_ids": chunk}
+        payload = {"catalog_object_ids": chunk, "location_ids": [SQUARE_LOCATION_ID]}
         try:
-            response = requests.post(url, headers=get_square_api_headers(), json=inventory_payload)
+            response = requests.post(url, headers=get_square_api_headers(), json=payload)
             response.raise_for_status()
             counts = response.json().get('counts', [])
             for count in counts:
                 if count.get('state') == 'IN_STOCK':
                     inventory_counts[count['catalog_object_id']] = int(count['quantity'])
         except Exception as e:
-            print(f"Square API Error fetching inventory chunk: {e}")
-            # Continue without inventory data for this chunk if it fails
+            print(f"Square API Error fetching inventory counts: {e}")
             
-    return catalog, inventory_counts
+    return inventory_counts
 
 def search_for_image(item_data, image_map):
     """Find the thumbnail URL for an item, checking variations if needed."""
@@ -148,31 +148,77 @@ def format_data_for_frontend(catalog, inventory_counts):
         for obj in catalog
         if obj['type'] == 'IMAGE' and obj.get('image_data', {}).get('url')
     }
-    category_map = {
-        obj['id']: obj.get('category_data', {}).get('name')
-        for obj in catalog
-        if obj['type'] == 'CATEGORY' and obj.get('category_data', {}).get('name')
-    }
+    
+    # Filter categories by location
+    category_map = {}
+    for obj in catalog:
+        if obj['type'] == 'CATEGORY':
+            is_present = obj.get('present_at_all_locations', False) or \
+                         (SQUARE_LOCATION_ID and SQUARE_LOCATION_ID in obj.get('present_at_location_ids', []))
+            is_absent = SQUARE_LOCATION_ID and SQUARE_LOCATION_ID in obj.get('absent_at_location_ids', [])
+            
+            if SQUARE_LOCATION_ID and (not is_present or is_absent):
+                continue
+                
+            name = obj.get('category_data', {}).get('name')
+            if name:
+                category_map[obj['id']] = name
 
     for obj in catalog:
         if obj['type'] == 'ITEM':
+            # Filter by location if SQUARE_LOCATION_ID is set
+            is_present = obj.get('present_at_all_locations', False) or \
+                         (SQUARE_LOCATION_ID and SQUARE_LOCATION_ID in obj.get('present_at_location_ids', []))
+            
+            is_absent = SQUARE_LOCATION_ID and SQUARE_LOCATION_ID in obj.get('absent_at_location_ids', [])
+            
+            if SQUARE_LOCATION_ID and (not is_present or is_absent):
+                continue
+
             item_data = obj.get('item_data', {})
             
             if item_data.get('is_archived'):
+                continue
+            
+            # Filter by product type (default to REGULAR if missing)
+            if item_data.get('product_type') not in ['REGULAR', None]:
+                continue
+            
+            # Filter by POS channel if configured
+            # If an item has channel restrictions, it must include the POS channel
+            item_channels = item_data.get('channels', [])
+            if SQUARE_POS_CHANNEL_ID and item_channels and SQUARE_POS_CHANNEL_ID not in item_channels:
+                continue
+            
+            # If item has a category, ensure the category is available at this location
+            category_id = item_data.get('category_id')
+            if category_id and category_id not in category_map:
                 continue
 
             item_id = obj['id']
 
             is_complex = len(item_data.get('variations', [])) > 1
+            image_url = search_for_image(item_data, image_map)
             
             variations_data = []
             for var in item_data.get('variations', []):
                 var_data = var.get('item_variation_data', {})
                 var_id = var['id']
+                
+                # Check location overrides for track_inventory
+                track_inventory = var_data.get('track_inventory', False)
+                if SQUARE_LOCATION_ID and var_data.get('location_overrides'):
+                    for override in var_data.get('location_overrides'):
+                        if override.get('location_id') == SQUARE_LOCATION_ID:
+                            if 'track_inventory' in override:
+                                track_inventory = override['track_inventory']
+                            break
+
                 variations_data.append({
                     "id": var_id,
                     "name": var_data.get('name', 'Regular'),
-                    "quantity": inventory_counts.get(var_id, 0)
+                    "quantity": inventory_counts.get(var_id, 0),
+                    "trackInventory": track_inventory
                 })
 
             items_map[item_id] = {
@@ -187,56 +233,106 @@ def format_data_for_frontend(catalog, inventory_counts):
             
     return list(items_map.values())
 
-def get_and_process_data():
-    """
-    Fetches the full catalog from Square, formats it for the frontend,
-    and returns it.
-    """
-    print("--- Fetching fresh data from Square API ---")
-    catalog, inventory = get_full_catalog_with_inventory()
-    if not catalog:
-        return []
-    
-    clean_items = format_data_for_frontend(catalog, inventory)
-    return clean_items
-
-
-
 
 # --- ROUTES ---
 
+@app.before_request
+def check_pin():
+    # Only protect API routes
+    if request.path.startswith('/api/'):
+        # Allow the verify-pin endpoint
+        if request.path == '/api/verify-pin':
+            return
+        
+        # If no PIN is configured, allow all (optional, but safer to require it if configured)
+        if not APP_PIN:
+            return
+
+        pin = request.headers.get('X-App-Pin')
+        if pin != APP_PIN:
+            return jsonify({"error": "Unauthorized", "message": "Invalid PIN"}), 401
+
+@app.route('/api/verify-pin', methods=['POST'])
+def verify_pin():
+    data = request.json
+    pin = data.get('pin')
+    
+    
+    if not APP_PIN:
+        return jsonify({"success": True, "message": "No PIN configured"})
+        
+    if pin == APP_PIN:
+        return jsonify({"success": True})
+    else:
+        return jsonify({"success": False, "message": "Invalid PIN"}), 401
+
 @app.route('/api/inventory')
 def api_inventory():
-    global _cache, _cache_last_updated
+    global _catalog_cache, _inventory_cache, _cache_last_updated
     
-    # Check if cache is valid
-    if _cache and (time.time() - _cache_last_updated < CACHE_DURATION):
-        print("--- Serving from cache ---")
-        clean_items = _cache
-    else:
-        clean_items = get_and_process_data()
-        _cache = clean_items
+    favorites_only = request.args.get('favorites_only') == 'true'
+    
+    # Check if we need to refresh the full catalog cache
+    if not _catalog_cache or (time.time() - _cache_last_updated > CACHE_DURATION):
+        _catalog_cache = get_catalog_structure()
         _cache_last_updated = time.time()
+        # On full catalog refresh, we clear inventory cache to ensure fresh counts
+        _inventory_cache = {}
 
-    # Add favorite status (this needs to be fresh on every request)
+    if not _catalog_cache:
+        return jsonify([])
+
+    # Add favorite status (always fresh from DB)
     try:
-        favorites = {f.item_id for f in Favorite.query.all()}
-        for item in clean_items:
-            # Default to False, then set to True if in favorites
-            item['isStarred'] = item['id'] in favorites
+        favorites_ids = {f.item_id for f in Favorite.query.all()}
     except Exception as e:
         print(f"Database error fetching favorites: {e}")
-        return jsonify({"error": "Database error fetching favorites"}), 500
-    
-    return jsonify(clean_items)
+        return jsonify({"error": "Database error"}), 500
+
+    if favorites_only:
+        # 1. Identify variations for favorite items only
+        favorite_var_ids = []
+        for obj in _catalog_cache:
+            if obj['type'] == 'ITEM' and obj['id'] in favorites_ids:
+                for var in obj.get('item_data', {}).get('variations', []):
+                    favorite_var_ids.append(var['id'])
+
+        # 2. Fetch LIVE inventory counts for just these favorites
+        fav_inventory = fetch_inventory_counts(favorite_var_ids)
+        
+        # 3. Format just these items
+        clean_items = format_data_for_frontend(_catalog_cache, fav_inventory)
+        clean_items = [item for item in clean_items if item['id'] in favorites_ids]
+        
+        for item in clean_items:
+            item['isStarred'] = True
+            
+        return jsonify(clean_items)
+
+    else:
+        # Full library requested
+        # Check if we need to refresh all inventory counts
+        if not _inventory_cache:
+            all_var_ids = []
+            for obj in _catalog_cache:
+                if obj['type'] == 'ITEM':
+                    for var in obj.get('item_data', {}).get('variations', []):
+                        all_var_ids.append(var['id'])
+            _inventory_cache = fetch_inventory_counts(all_var_ids)
+            
+        clean_items = format_data_for_frontend(_catalog_cache, _inventory_cache)
+        for item in clean_items:
+            item['isStarred'] = item['id'] in favorites_ids
+            
+        return jsonify(clean_items)
 
 @app.route('/api/inventory/sync', methods=['POST'])
 def sync_inventory():
     """Forces a refresh of the server's cache from the Square API."""
-    global _cache, _cache_last_updated
+    global _catalog_cache, _inventory_cache, _cache_last_updated
     
-    clean_items = get_and_process_data()
-    _cache = clean_items
+    _catalog_cache = get_catalog_structure()
+    _inventory_cache = {} # Force refresh on next request
     _cache_last_updated = time.time()
     
     return jsonify({"success": True, "message": "Cache has been refreshed."})
@@ -263,6 +359,45 @@ def toggle_star():
     return jsonify({"success": True, "is_starred": starred})
 
 
+@app.route('/api/inventory/track', methods=['POST'])
+def enable_inventory_tracking():
+    variation_id = request.json.get('variationId')
+    if not variation_id:
+        return jsonify({"error": "Variation ID is required"}), 400
+
+    # First, get the variation to know its current version and item ID
+    url = f"https://connect.squareup.com/v2/catalog/object/{variation_id}"
+    try:
+        response = requests.get(url, headers=get_square_api_headers())
+        response.raise_for_status()
+        obj = response.json().get('object')
+        if not obj:
+            return jsonify({"error": "Variation not found"}), 404
+        
+        # Update track_inventory to True
+        obj['item_variation_data']['track_inventory'] = True
+        
+        # Upsert the catalog object
+        update_url = "https://connect.squareup.com/v2/catalog/object"
+        update_payload = {
+            "idempotency_key": f"track-{variation_id}-{int(time.time())}",
+            "object": obj
+        }
+        update_response = requests.post(update_url, headers=get_square_api_headers(), json=update_payload)
+        update_response.raise_for_status()
+        
+        # Force cache refresh
+        global _catalog_cache, _inventory_cache, _cache_last_updated
+        _catalog_cache = None
+        _inventory_cache = {}
+        _cache_last_updated = 0
+        
+        return jsonify({"success": True, "message": "Inventory tracking enabled."})
+    except Exception as e:
+        print(f"Error enabling inventory tracking: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/inventory/update', methods=['POST'])
 def batch_update_inventory():
     changes = request.json.get('changes')
@@ -277,19 +412,41 @@ def batch_update_inventory():
     if not idempotency_key:
          return jsonify({"error": "Idempotency-Key header is required"}), 400
 
+    # To ensure multi-device sync, we want to perform relative updates.
+    # We fetch the latest counts from Square right before updating.
+    variation_ids = [c['variationId'] for c in changes]
+    
+    current_counts = {}
+    try:
+        counts_url = "https://connect.squareup.com/v2/inventory/counts/batch-retrieve"
+        counts_payload = {"catalog_object_ids": variation_ids, "location_ids": [SQUARE_LOCATION_ID]}
+        counts_response = requests.post(counts_url, headers=get_square_api_headers(), json=counts_payload)
+        counts_response.raise_for_status()
+        counts_data = counts_response.json().get('counts', [])
+        for count in counts_data:
+            if count.get('state') == 'IN_STOCK':
+                current_counts[count['catalog_object_id']] = int(count['quantity'])
+    except Exception as e:
+        print(f"Error fetching current counts for update: {e}")
+        # Continue with 0 as base if fetch fails
+
     url = "https://connect.squareup.com/v2/inventory/changes/batch-create"
     
     square_changes = []
+    occurred_at = datetime.now(timezone.utc).isoformat()
+    
     for change in changes:
+        var_id = change['variationId']
+        new_qty = change['quantity']
+        
         square_changes.append({
-            "type": "ADJUSTMENT",
-            "adjustment": {
-                "catalog_object_id": change['variationId'],
-                "from_state": "IN_STOCK",
-                "to_state": "IN_STOCK",
+            "type": "PHYSICAL_COUNT",
+            "physical_count": {
+                "catalog_object_id": var_id,
+                "state": "IN_STOCK",
                 "location_id": SQUARE_LOCATION_ID,
-                "quantity": str(change['quantity']),
-                "occurred_at": datetime.now(timezone.utc).isoformat()
+                "quantity": str(max(0, int(new_qty))),
+                "occurred_at": occurred_at
             }
         })
 
@@ -302,6 +459,11 @@ def batch_update_inventory():
     try:
         response = requests.post(url, headers=get_square_api_headers(), json=payload)
         response.raise_for_status()
+        
+        # Force inventory cache refresh after update
+        global _inventory_cache
+        _inventory_cache = {}
+        
         return jsonify({"success": True, "data": response.json()})
     except requests.exceptions.HTTPError as e:
         error_details = e.response.json()
@@ -312,17 +474,6 @@ def batch_update_inventory():
         return jsonify({"error": "An unexpected error occurred."}), 500
 
 
-# def background_sync():
-#     """A simple background thread to keep the cache warm."""
-#     print("--- Starting background sync thread ---")
-#     while True:
-#         with app.app_context(): # Create an app context for the db call
-#             global _cache, _cache_last_updated
-#             clean_items = get_and_process_data()
-#             _cache = clean_items
-#             _cache_last_updated = time.time()
-#             print(f"--- Background sync completed. {len(_cache)} items cached. ---")
-#         time.sleep(CACHE_DURATION)
 @app.route('/')
 def index():
     return send_from_directory('dist', 'index.html')
@@ -339,16 +490,18 @@ def background_sync():
     print("--- Starting background sync thread ---")
     while True:
         with app.app_context(): # Create an app context for the db call
-            global _cache, _cache_last_updated
-            clean_items = get_and_process_data()
-            _cache = clean_items
+            global _catalog_cache, _inventory_cache, _cache_last_updated
+            _catalog_cache = get_catalog_structure()
+            _inventory_cache = {} # Will be re-fetched on next request
             _cache_last_updated = time.time()
-            print(f"--- Background sync completed. {len(_cache)} items cached. ---")
+            print("--- Background catalog sync completed. ---")
         time.sleep(CACHE_DURATION)
 
 # Start the background thread on import so it runs with Gunicorn
-sync_thread = threading.Thread(target=background_sync, daemon=True)
-sync_thread.start()
+# But avoid double-start during Flask local development
+if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not os.environ.get("FLASK_DEBUG"):
+    sync_thread = threading.Thread(target=background_sync, daemon=True)
+    sync_thread.start()
 
 if __name__ == '__main__':
     # Get location ID on startup before starting the sync thread

@@ -6,6 +6,7 @@ export interface Variation {
   id: string;
   name: string; // e.g., "340g", "2kg"
   quantity: number;
+  trackInventory: boolean;
 }
 
 export interface Product {

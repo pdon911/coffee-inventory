@@ -3,10 +3,16 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Product, ViewState, Category, QuantityChange } from './types';
 import { ProductCard } from './components/ProductCard';
 import { SavingIndicator } from './components/SavingIndicator';
+import { PinPad } from './components/PinPad';
+import { PWAPrompt } from './components/PWAPrompt';
 import { Search, List, Star, X, RotateCcw } from 'lucide-react';
 
 const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [appPin, setAppPin] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasLoadedLibrary, setHasLoadedLibrary] = useState(false);
   const [currentView, setCurrentView] = useState<ViewState>('HOME');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -20,23 +26,140 @@ const App: React.FC = () => {
 
   // --- New state for API interactions ---
   const [pendingChanges, setPendingChanges] = useState<Record<string, QuantityChange>>({});
+  const [pendingSyncIds, setPendingSyncIds] = useState<Set<string>>(new Set());
+  const [delayedPendingIds, setDelayedPendingIds] = useState<Set<string>>(new Set());
+  const [justSavedIds, setJustSavedIds] = useState<Set<string>>(new Set());
+  const [recentlySyncedIds, setRecentlySyncedIds] = useState<Set<string>>(new Set());
+  const [recentlyUpdated, setRecentlyUpdated] = useState<Record<string, number>>({});
+  const [syncingVariations, setSyncingVariations] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
-  const [isSaveSuccess, setIsSaveSuccess] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   const [showTopHeader, setShowTopHeader] = useState(true);
   const lastScrollY = useRef(0);
   const removalTimersRef = useRef<Record<string, number[]>>({});
+  const baseQuantitiesRef = useRef<Record<string, number>>({});
+  
+  // Use refs for synchronization data to ensure fetchInventory always sees the latest values
+  const pendingChangesRef = useRef<Record<string, QuantityChange>>({});
+  const recentlyUpdatedRef = useRef<Record<string, number>>({});
+
+  // Sync state to refs whenever they change
+  useEffect(() => {
+    pendingChangesRef.current = pendingChanges;
+  }, [pendingChanges]);
+
+  useEffect(() => {
+    recentlyUpdatedRef.current = recentlyUpdated;
+  }, [recentlyUpdated]);
 
   // --- Data Fetching ---
-  const fetchInventory = useCallback(async () => {
+  const fetchInventory = useCallback(async (isBackground = false, favoritesOnly = false) => {
+    if (!appPin) return;
+    if (isBackground) setIsSyncing(true);
     try {
-      const response = await fetch('/api/inventory');
+      const url = `/api/inventory?favorites_only=${favoritesOnly}`;
+      const response = await fetch(url, {
+        headers: {
+          'X-App-Pin': appPin
+        }
+      });
+      if (response.status === 401) {
+        setIsAuthenticated(false);
+        localStorage.removeItem('app_pin');
+        setAppPin(null);
+        return;
+      }
       if (!response.ok) {
         throw new Error('Network response was not ok');
       }
       const data: Product[] = await response.json();
-      setProducts(data);
+      
+      if (!favoritesOnly) setHasLoadedLibrary(true);
+
+      // Update base quantities
+      data.forEach(p => {
+        p.variations.forEach(v => {
+            baseQuantitiesRef.current[v.id] = v.quantity;
+        });
+      });
+
+      setIsLoading(false);
+      setProducts(prevProducts => {
+        // If first load, always set data
+        if (prevProducts.length === 0) return data;
+
+        const currentPending = pendingChangesRef.current;
+        const currentRecent = recentlyUpdatedRef.current;
+        const now = Date.now();
+        const backgroundSyncedIds = new Set<string>();
+
+        // If the new data is just favorites, we merge into existing list.
+        // If it's a full sync, we use the new data as base.
+        const merged = favoritesOnly ? [...prevProducts] : [...data];
+        
+        data.forEach(newProduct => {
+          const existingIndex = merged.findIndex(p => p.id === newProduct.id);
+          const prevProduct = prevProducts.find(p => p.id === newProduct.id);
+          
+          // Merge variations, preserving pending changes or very recent updates
+          const mergedVariations = newProduct.variations.map(newVar => {
+            const pending = currentPending[newVar.id];
+            if (pending) {
+              return { ...newVar, quantity: pending.quantity };
+            }
+            
+            // If it was recently updated (within last 3 seconds), keep the previous quantity
+            const lastUpdate = currentRecent[newVar.id];
+            if (lastUpdate && (now - lastUpdate < 3000)) {
+                const prevVar = prevProduct?.variations.find(v => v.id === newVar.id);
+                if (prevVar) {
+                    return { ...newVar, quantity: prevVar.quantity };
+                }
+            }
+
+            // Detect background change for flash effect
+            const prevVar = prevProduct?.variations.find(v => v.id === newVar.id);
+            if (prevVar && prevVar.quantity !== newVar.quantity) {
+                backgroundSyncedIds.add(newVar.id);
+            }
+            
+            return newVar;
+          });
+
+          const updatedProduct = {
+            ...newProduct,
+            isStarred: prevProduct ? prevProduct.isStarred : newProduct.isStarred,
+            variations: mergedVariations
+          };
+
+          if (existingIndex > -1) {
+            merged[existingIndex] = updatedProduct;
+          } else {
+            // New item found (e.g. newly starred item appearing in favorites poll)
+            merged.push(updatedProduct);
+          }
+        });
+
+        if (backgroundSyncedIds.size > 0) {
+            setRecentlySyncedIds(prev => {
+                const next = new Set(prev);
+                backgroundSyncedIds.forEach(id => next.add(id));
+                return next;
+            });
+            setTimeout(() => {
+                setRecentlySyncedIds(prev => {
+                    const next = new Set(prev);
+                    backgroundSyncedIds.forEach(id => next.delete(id));
+                    return next;
+                });
+            }, 3000);
+        }
+
+        return merged;
+      });
       
       const uniqueCategories = [...new Set(data.map(p => p.category || "Uncategorized"))] as Category[];
       setCategories(uniqueCategories);
@@ -44,25 +167,71 @@ const App: React.FC = () => {
     } catch (error) {
       console.error("Failed to fetch inventory:", error);
       setSaveError("Could not load inventory.");
+    } finally {
+      setIsLoading(false);
+      setIsSyncing(false);
     }
-  }, []);
+  }, [appPin]);
 
   // --- Initial Data Load ---
   useEffect(() => {
-    fetchInventory();
-  }, [fetchInventory]);
+    window.scrollTo(0, 0);
+    
+    // Lazy load library if needed
+    if (isAuthenticated && currentView === 'LIBRARY' && !hasLoadedLibrary && !isLoading) {
+        fetchInventory(false, false);
+    }
+  }, [currentView, hasLoadedLibrary, isLoading, fetchInventory, isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+        // Initial fetch: Favorites Only for speed
+        fetchInventory(false, true);
+    }
+  }, [isAuthenticated, fetchInventory]); // Run when authenticated
+
+  useEffect(() => {
+    // Background polling every 30 seconds
+    const interval = setInterval(() => {
+        // Only fetch if not currently saving
+        if (!isSaving && Object.keys(pendingChanges).length === 0) {
+            // Poll context-aware: only favorites if on home screen
+            const favoritesOnly = currentView === 'HOME';
+            fetchInventory(true, favoritesOnly);
+        }
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [fetchInventory, isSaving, pendingChanges, currentView]);
 
   // --- Debounced Batch Saving ---
   useEffect(() => {
     const changesToSave = Object.values(pendingChanges);
-    if (changesToSave.length === 0) {
+    if (changesToSave.length === 0 || !appPin) {
       return;
     }
 
     const handler = setTimeout(async () => {
       setIsSaving(true);
-      setIsSaveSuccess(false);
       setSaveError(null);
+      
+      // Mark these variations as syncing
+      const varIds = changesToSave.map(c => (c as QuantityChange).variationId);
+      setSyncingVariations(prev => {
+        const next = new Set(prev);
+        varIds.forEach(id => next.add(id));
+        return next;
+      });
+      setPendingSyncIds(prev => {
+        const next = new Set(prev);
+        varIds.forEach(id => next.delete(id));
+        return next;
+      });
+      setDelayedPendingIds(prev => {
+        const next = new Set(prev);
+        varIds.forEach(id => next.delete(id));
+        return next;
+      });
 
       const idempotencyKey = `batch-${Date.now()}`;
       
@@ -72,6 +241,7 @@ const App: React.FC = () => {
           headers: {
             'Content-Type': 'application/json',
             'Idempotency-Key': idempotencyKey,
+            'X-App-Pin': appPin
           },
           body: JSON.stringify({ changes: changesToSave }),
         });
@@ -82,23 +252,53 @@ const App: React.FC = () => {
         }
 
         setPendingChanges({});
-        setIsSaveSuccess(true);
-        setTimeout(() => setIsSaveSuccess(false), 2000); // Show success for 2s
+        
+        // Show "Saved" state for these variations
+        setJustSavedIds(prev => {
+            const next = new Set(prev);
+            varIds.forEach(id => next.add(id));
+            return next;
+        });
+        setTimeout(() => {
+            setJustSavedIds(prev => {
+                const next = new Set(prev);
+                varIds.forEach(id => next.delete(id));
+                return next;
+            });
+        }, 3000);
+
+        // Mark as recently updated to prevent flickering
+        const now = Date.now();
+        setRecentlyUpdated(prev => {
+            const next = { ...prev };
+            varIds.forEach(id => next[id] = now);
+            return next;
+        });
+
+        // Refresh after save completes
+        const favoritesOnly = currentView === 'HOME';
+        fetchInventory(true, favoritesOnly);
 
       } catch (error: any) {
         setSaveError(error.message || "An error occurred.");
         setTimeout(() => setSaveError(null), 5000); // Show error for 5s
         
         // On failure, refetch to revert optimistic updates
-        fetchInventory();
+        fetchInventory(true, false);
 
       } finally {
         setIsSaving(false);
+        // Clear syncing status for these variations
+        setSyncingVariations(prev => {
+            const next = new Set(prev);
+            varIds.forEach(id => next.delete(id));
+            return next;
+        });
       }
-    }, 2000); // 2-second debounce
+    }, 1000); // 1-second debounce
 
     return () => clearTimeout(handler);
-  }, [pendingChanges, fetchInventory]);
+  }, [pendingChanges, fetchInventory, currentView]);
 
 
   useEffect(() => {
@@ -159,7 +359,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleToggleStar = async (id: string) => {
+  const handleToggleStar = useCallback(async (id: string) => {
     const product = products.find(p => p.id === id);
     if (!product) return;
 
@@ -193,10 +393,14 @@ const App: React.FC = () => {
     }
 
     // --- API Call ---
+    if (!appPin) return;
     try {
         const response = await fetch('/api/toggle-star', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-App-Pin': appPin
+            },
             body: JSON.stringify({ id: id }),
         });
         if (!response.ok) throw new Error('Failed to toggle star');
@@ -207,9 +411,28 @@ const App: React.FC = () => {
           p.id === id ? { ...p, isStarred: !willBeStarred } : p
         ));
     }
-  };
+  }, [products, currentView]);
 
-  const handleUpdateQuantity = (productId: string, newQty: number, variationId: string) => {
+  const handleUpdateQuantity = useCallback((productId: string, newQty: number, variationId: string) => {
+    // Mark as pending immediately for debounce tracking
+    setPendingSyncIds(prev => new Set(prev).add(variationId));
+    
+    // Delayed feedback: start timer if not already pending
+    setDelayedPendingIds(prev => {
+        if (!prev.has(variationId)) {
+            setTimeout(() => {
+                setDelayedPendingIds(curr => new Set(curr).add(variationId));
+            }, 500);
+        }
+        return prev;
+    });
+
+    setJustSavedIds(prev => {
+        const next = new Set(prev);
+        next.delete(variationId);
+        return next;
+    });
+
     // Optimistic UI update
     setProducts(prev => prev.map(p => {
       if (p.id !== productId) return p;
@@ -227,7 +450,38 @@ const App: React.FC = () => {
       ...prev,
       [variationId]: { productId, variationId, quantity: newQty }
     }));
-  };
+  }, []);
+
+  const handleEnableTracking = useCallback(async (variationId: string) => {
+    if (!appPin) return;
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      const response = await fetch('/api/inventory/track', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-App-Pin': appPin
+        },
+        body: JSON.stringify({ variationId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to enable tracking.');
+      }
+
+      // Refresh inventory to reflect changes
+      fetchInventory(true, false);
+
+    } catch (error: any) {
+      setSaveError(error.message || "An error occurred.");
+      setTimeout(() => setSaveError(null), 5000);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [fetchInventory]);
 
   const undoRemove = (id: string) => {
     if (removalTimersRef.current[id]) {
@@ -283,6 +537,29 @@ const App: React.FC = () => {
   const showHeader = currentView === 'LIBRARY';
   const isNavHidden = isAnyInputFocused || (searchQuery.trim().length > 0 && currentView === 'LIBRARY');
 
+  const handleVerifyPin = async (pin: string) => {
+    try {
+      const response = await fetch('/api/verify-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      if (response.ok) {
+        setAppPin(pin);
+        setIsAuthenticated(true);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Failed to verify PIN:", error);
+      return false;
+    }
+  };
+
+  if (!isAuthenticated) {
+    return <PinPad onVerify={handleVerifyPin} error={pinError} />;
+  }
+
   const renderProduct = (product: Product) => {
     const isRemoved = removedItems.has(product.id);
     const isCollapsing = collapsingItems.has(product.id);
@@ -327,6 +604,12 @@ const App: React.FC = () => {
             product={product} 
             onToggleStar={handleToggleStar}
             onUpdateQuantity={handleUpdateQuantity}
+            onEnableTracking={handleEnableTracking}
+            viewState={currentView}
+            syncingVariations={syncingVariations}
+            pendingSyncIds={delayedPendingIds}
+            justSavedIds={justSavedIds}
+            recentlySyncedIds={recentlySyncedIds}
           />
         </div>
       </div>
@@ -338,7 +621,7 @@ const App: React.FC = () => {
       
       {showHeader && (
         <header 
-          className={`sticky z-30 bg-black/95 backdrop-blur-md border-b border-villain-gray px-4 transition-all duration-300 ease-in-out ${
+          className={`sticky z-30 bg-black/95 backdrop-blur-md border-b border-villain-gray sm:px-4 px-1 transition-all duration-300 ease-in-out ${
               showTopHeader ? 'top-0' : '-top-[80px]' 
           }`}
         >
@@ -388,17 +671,27 @@ const App: React.FC = () => {
         </header>
       )}
 
-      <main className={`max-w-[44rem] mx-auto px-4 ${showHeader ? 'pt-4' : 'pt-16'}`}>
+      <main className={`max-w-[44rem] mx-auto sm:px-4 px-1 ${showHeader ? 'pt-4' : 'pt-16'}`}>
         {currentView === 'HOME' && (
-          <div className="mb-8">
-            <h1 className="text-4xl font-black uppercase font-display tracking-tight text-white">
-              Favorites
-            </h1>
-            <div className="w-12 h-1 bg-villain-red mt-2" />
+          <div className="mb-10 flex items-center gap-3 px-2 sm:px-1">
+            <div className="flex-shrink-0 ml-1">
+                <img src="/logo.png" alt="Coffee Villain" className="w-11 h-11 object-contain" onError={(e) => e.currentTarget.style.display = 'none'} />
+            </div>
+            <div>
+                <h1 className="text-4xl font-black uppercase font-display tracking-tight text-white leading-none">
+                  Inventory
+                </h1>
+                <div className="w-12 h-1 bg-villain-red mt-2" />
+            </div>
           </div>
         )}
 
-        {currentView === 'LIBRARY' ? (
+        {(isLoading && products.length === 0) ? (
+            <div className="flex flex-col items-center justify-center py-20 opacity-50">
+                <div className="w-8 h-8 border-4 border-villain-red border-t-transparent rounded-full animate-spin mb-4" />
+                <p className="text-xs font-black uppercase tracking-widest">Syncing Library...</p>
+            </div>
+        ) : currentView === 'LIBRARY' ? (
           (isSearchFocused || searchQuery.length > 0) ? (
             searchQuery.length < 2 ? (
               <div className="text-center py-20 px-6 opacity-70 flex flex-col items-center animate-in fade-in zoom-in duration-300">
@@ -446,7 +739,9 @@ const App: React.FC = () => {
         )}
       </main>
       
-      <SavingIndicator isSaving={isSaving} isSuccess={isSaveSuccess} error={saveError} />
+      <PWAPrompt />
+
+      <SavingIndicator isSaving={isSyncing} isSuccess={false} error={saveError} />
 
       <div className={`fixed bottom-0 left-0 w-full h-32 bg-gradient-to-t from-black/80 to-transparent pointer-events-none z-30 transition-opacity duration-300 ${isNavHidden ? 'opacity-0' : 'opacity-100'}`} />
 

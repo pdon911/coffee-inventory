@@ -16,12 +16,12 @@ export const SavingIndicator: React.FC<SavingIndicatorProps> = ({ isSaving, isSu
 
   return (
     <div 
-      className={`fixed bottom-8 right-8 z-50 flex items-center gap-3 px-4 py-2 rounded-full text-white transition-all duration-300 ease-in-out shadow-lg ${getBackgroundColor()} ${isSaving || isSuccess || error ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}
+      className={`fixed top-8 right-8 z-50 flex items-center gap-3 px-4 py-2 rounded-full text-white transition-all duration-300 ease-in-out shadow-lg ${getBackgroundColor()} ${isSaving || isSuccess || error ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}`}
     >
       {isSaving && !isSuccess && !error && (
         <>
           <Loader size={16} className="animate-spin" />
-          <span className="text-xs font-bold uppercase tracking-wider">Saving...</span>
+          <span className="text-xs font-bold uppercase tracking-wider">Syncing...</span>
         </>
       )}
       {isSuccess && (

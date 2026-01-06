@@ -27,6 +27,10 @@ This project is a simple inventory management application for a coffee shop call
 3. **Run the application:**
 `npm run dev`
 
+## Local Development
+
+For instructions on how to set up and run the project locally, please see [LOCAL_SETUP.md](./LOCAL_SETUP.md).
+
 ## Deployment
 
 The application is deployed on Render. The frontend is a static site, and the backend is a Python web service.
