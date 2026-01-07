@@ -11,8 +11,6 @@ import threading
 load_dotenv()
 
 print("--- STARTING COFFEE VILLAIN BACKEND ---", flush=True)
-print(f"DEBUG: APP_PIN length: {len(os.environ.get('APP_PIN', ''))}", flush=True)
-print(f"DEBUG: DATABASE_URL exists: {bool(os.environ.get('DATABASE_URL'))}", flush=True)
 
 app = Flask(__name__)
 # Enable CORS for all routes under /api/
@@ -53,9 +51,7 @@ class Favorite(db.Model):
 # Safely initialize database
 try:
     with app.app_context():
-        print("DEBUG: Attempting to create database tables...", flush=True)
         db.create_all()
-        print("DEBUG: Database initialization successful.", flush=True)
 except Exception as e:
     print(f"ERROR: Database initialization failed: {e}", flush=True)
     # We don't exit here so the health check and logging can still run
@@ -253,6 +249,10 @@ def format_data_for_frontend(catalog, inventory_counts):
 
 @app.before_request
 def check_pin():
+    # Always allow OPTIONS requests for CORS pre-flight
+    if request.method == 'OPTIONS':
+        return
+
     # Only protect API routes
     if request.path.startswith('/api/'):
         # Allow the verify-pin and health endpoints
