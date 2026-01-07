@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
         host: '0.0.0.0',
         proxy: {
           '/api': {
-            target: 'http://localhost:8080',
+            target: 'http://127.0.0.1:8080',
             changeOrigin: true,
           },
         },
@@ -24,10 +24,10 @@ export default defineConfig(({ mode }) => {
         react(),
         VitePWA({
           registerType: 'autoUpdate',
-          includeAssets: ['logo.png'],
+          includeAssets: ['logo.png', 'croissant-logo.png'],
           manifest: {
-            name: 'Coffee Villain Inventory',
-            short_name: 'Villain',
+            name: 'Inventory',
+            short_name: 'Inventory',
             description: 'Inventory Management for Coffee Villain',
             theme_color: '#000000',
             background_color: '#000000',
@@ -35,17 +35,17 @@ export default defineConfig(({ mode }) => {
             start_url: '/',
             icons: [
               {
-                src: 'logo.png',
+                src: 'croissant-logo.png',
                 sizes: '192x192',
                 type: 'image/png'
               },
               {
-                src: 'logo.png',
+                src: 'croissant-logo.png',
                 sizes: '512x512',
                 type: 'image/png'
               },
               {
-                src: 'logo.png',
+                src: 'croissant-logo.png',
                 sizes: '512x512',
                 type: 'image/png',
                 purpose: 'any maskable'

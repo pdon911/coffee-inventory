@@ -51,7 +51,9 @@ class Favorite(db.Model):
 # Safely initialize database
 try:
     with app.app_context():
+        print("DEBUG: Initializing database...", flush=True)
         db.create_all()
+        print("DEBUG: Database initialized.", flush=True)
 except Exception as e:
     print(f"ERROR: Database initialization failed: {e}", flush=True)
     # We don't exit here so the health check and logging can still run
@@ -547,6 +549,7 @@ if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not os.environ.get("FLASK_DE
 if __name__ == '__main__':
     # Get location ID on startup before starting the sync thread
     with app.app_context():
+        print("DEBUG: Fetching Square location ID...", flush=True)
         get_first_location_id()
     
     # # Start the background thread
@@ -554,4 +557,5 @@ if __name__ == '__main__':
     # sync_thread.start()
 
     port = int(os.environ.get('PORT', 8080))
+    print(f"DEBUG: Local server starting on port {port}...", flush=True)
     app.run(host='0.0.0.0', port=port)

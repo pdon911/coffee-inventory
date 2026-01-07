@@ -9,7 +9,11 @@ def run_backend():
     # Use sys.executable to ensure we use the same python interpreter
     env = os.environ.copy()
     env["FLASK_DEBUG"] = "1"
-    subprocess.run([sys.executable, "app.py"], env=env)
+    env["PYTHONUNBUFFERED"] = "1"
+    try:
+        subprocess.run([sys.executable, "app.py"], env=env)
+    except Exception as e:
+        print(f"Error launching backend: {e}")
 
 def run_frontend():
     print("Starting Vite frontend on port 3000...")
@@ -21,6 +25,10 @@ def run_frontend():
     subprocess.run(cmd, shell=shell)
 
 if __name__ == "__main__":
+    # Install Python dependencies
+    print("Checking Python dependencies...")
+    subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+
     # Check for node_modules
     if not os.path.exists("node_modules"):
         print("node_modules not found. Installing frontend dependencies...")
