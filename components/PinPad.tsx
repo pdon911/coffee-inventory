@@ -80,7 +80,7 @@ export const PinPad: React.FC<PinPadProps> = ({ onVerify, error: externalError }
     }`}>
       <div className="w-full max-w-sm flex flex-col items-center justify-center gap-12 py-6">
         <div className="flex flex-col items-center flex-shrink-0 scale-90 sm:scale-100">
-          <img src="/logo.png" alt="Coffee Villain" className="w-16 h-16 mb-4 object-contain" />
+          <img src="/croissant-logo.png" alt="Logo" className="w-16 h-16 mb-4 object-contain" />
           <h1 className="text-2xl font-black uppercase font-display tracking-tight text-white leading-none mb-1">
             Access Required
           </h1>

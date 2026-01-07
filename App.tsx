@@ -680,7 +680,7 @@ const App: React.FC = () => {
         {currentView === 'HOME' && (
           <div className="mb-10 flex items-center gap-3 px-2 sm:px-1">
             <div className="flex-shrink-0 ml-1">
-                <img src="/logo.svg" alt="Inventory" className="w-11 h-11 object-contain" onError={(e) => e.currentTarget.style.display = 'none'} />
+                <img src="/logo.png" alt="Inventory" className="w-11 h-11 object-contain" onError={(e) => e.currentTarget.style.display = 'none'} />
             </div>
             <div>
                 <h1 className="text-4xl font-black uppercase font-display tracking-tight text-white leading-none">

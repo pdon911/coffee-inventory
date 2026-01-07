@@ -73,7 +73,7 @@ export const PWAPrompt: React.FC = () => {
 
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 bg-black rounded-xl border border-white/5 flex items-center justify-center flex-shrink-0">
-             <img src="/logo.png" alt="Logo" className="w-8 h-8 object-contain" />
+             <img src="/croissant-logo.png" alt="Logo" className="w-8 h-8 object-contain" />
           </div>
           
           <div className="flex-grow">
