@@ -2,6 +2,7 @@ import os
 import requests
 from flask import Flask, jsonify, request, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 import time
@@ -14,6 +15,8 @@ print(f"DEBUG: APP_PIN length: {len(os.environ.get('APP_PIN', ''))}", flush=True
 print(f"DEBUG: DATABASE_URL exists: {bool(os.environ.get('DATABASE_URL'))}", flush=True)
 
 app = Flask(__name__)
+# Enable CORS for all routes under /api/
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # --- CACHE ---
 _catalog_cache = None # Processed items with categories/images (no quantities)

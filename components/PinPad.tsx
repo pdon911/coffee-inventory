@@ -10,6 +10,7 @@ export const PinPad: React.FC<PinPadProps> = ({ onVerify, error: externalError }
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
 
   useEffect(() => {
     if (externalError) {
@@ -51,7 +52,7 @@ export const PinPad: React.FC<PinPadProps> = ({ onVerify, error: externalError }
     if (!isAuto) setIsVerifying(false);
     
     if (success) {
-      // Handled by App.tsx
+      setIsUnlocked(true);
     } else if (!isAuto) {
       setError('INVALID PIN');
       setPin('');
@@ -74,17 +75,19 @@ export const PinPad: React.FC<PinPadProps> = ({ onVerify, error: externalError }
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-4 animate-in fade-in duration-500 h-[100dvh] overflow-hidden">
-      <div className="w-full max-w-sm h-full max-h-[100dvh] min-h-[450px] flex flex-col items-center justify-between py-6">
+    <div className={`fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-4 h-[100dvh] overflow-hidden transition-all duration-700 ease-in-out ${
+      isUnlocked ? 'scale-[2] opacity-0 pointer-events-none blur-xl' : 'animate-in fade-in duration-500'
+    }`}>
+      <div className="w-full max-w-sm flex flex-col items-center justify-center gap-12 py-6">
         <div className="flex flex-col items-center flex-shrink-0 scale-90 sm:scale-100">
-          <img src="/logo.png" alt="Coffee Villain" className="w-12 h-12 mb-3 object-contain" />
+          <img src="/logo.png" alt="Coffee Villain" className="w-16 h-16 mb-4 object-contain" />
           <h1 className="text-2xl font-black uppercase font-display tracking-tight text-white leading-none mb-1">
             Access Required
           </h1>
           <div className="w-10 h-1 bg-villain-red" />
         </div>
 
-        <div className="w-full flex flex-col flex-grow justify-center py-2">
+        <div className="w-full flex flex-col justify-center py-2">
           {/* PIN Display */}
           <div className={`mb-4 flex justify-center gap-4 h-8 items-center`}>
             {Array.from({ length: Math.max(pin.length, 4) }).map((_, i) => (
@@ -137,7 +140,7 @@ export const PinPad: React.FC<PinPadProps> = ({ onVerify, error: externalError }
           </div>
         </div>
 
-        <div className="w-full mt-2 flex-shrink-0 px-4">
+        <div className="w-full mt-4 flex-shrink-0 px-4">
           <button
             onClick={() => { triggerHaptic(); handleSubmit(false); }}
             disabled={pin.length === 0 || isVerifying}
@@ -152,16 +155,12 @@ export const PinPad: React.FC<PinPadProps> = ({ onVerify, error: externalError }
             ) : (
               <>
                 <Unlock size={20} />
-                Unlock System
+                Unlock
               </>
             )}
           </button>
         </div>
       </div>
-      
-      <p className="mt-12 text-[10px] text-gray-600 font-black uppercase tracking-[0.3em]">
-        Coffee Villain Inventory v1.0
-      </p>
     </div>
   );
 };

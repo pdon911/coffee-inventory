@@ -55,12 +55,17 @@ const App: React.FC = () => {
     recentlyUpdatedRef.current = recentlyUpdated;
   }, [recentlyUpdated]);
 
+  // Determine API Base URL
+  const API_BASE = import.meta.env.PROD 
+    ? 'https://backend-i2ms.onrender.com' 
+    : '';
+
   // --- Data Fetching ---
   const fetchInventory = useCallback(async (isBackground = false, favoritesOnly = false) => {
     if (!appPin) return;
     if (isBackground) setIsSyncing(true);
     try {
-      const url = `/api/inventory?favorites_only=${favoritesOnly}`;
+      const url = `${API_BASE}/api/inventory?favorites_only=${favoritesOnly}`;
       const response = await fetch(url, {
         headers: {
           'X-App-Pin': appPin
@@ -236,7 +241,7 @@ const App: React.FC = () => {
       const idempotencyKey = `batch-${Date.now()}`;
       
       try {
-        const response = await fetch('/api/inventory/update', {
+        const response = await fetch(`${API_BASE}/api/inventory/update`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -395,7 +400,7 @@ const App: React.FC = () => {
     // --- API Call ---
     if (!appPin) return;
     try {
-        const response = await fetch('/api/toggle-star', {
+        const response = await fetch(`${API_BASE}/api/toggle-star`, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
@@ -458,7 +463,7 @@ const App: React.FC = () => {
     setSaveError(null);
 
     try {
-      const response = await fetch('/api/inventory/track', {
+      const response = await fetch(`${API_BASE}/api/inventory/track`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -539,7 +544,7 @@ const App: React.FC = () => {
 
   const handleVerifyPin = async (pin: string) => {
     try {
-      const response = await fetch('/api/verify-pin', {
+      const response = await fetch(`${API_BASE}/api/verify-pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pin }),
