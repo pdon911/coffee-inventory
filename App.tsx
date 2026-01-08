@@ -7,8 +7,14 @@ import { PinPad } from './components/PinPad';
 import { PWAPrompt } from './components/PWAPrompt';
 import { Search, List, Star, X, RotateCcw } from 'lucide-react';
 
+// Determine API Base URL
+const API_BASE = import.meta.env.PROD 
+  ? 'https://backend-i2ms.onrender.com' 
+  : '';
+
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isBackendReady, setIsBackendReady] = useState(false);
   const [appPin, setAppPin] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,11 +60,6 @@ const App: React.FC = () => {
   useEffect(() => {
     recentlyUpdatedRef.current = recentlyUpdated;
   }, [recentlyUpdated]);
-
-  // Determine API Base URL
-  const API_BASE = import.meta.env.PROD 
-    ? 'https://backend-i2ms.onrender.com' 
-    : '';
 
   // --- Data Fetching ---
   const fetchInventory = useCallback(async (isBackground = false, favoritesOnly = false) => {
@@ -177,6 +178,21 @@ const App: React.FC = () => {
       setIsSyncing(false);
     }
   }, [appPin]);
+
+  // --- Wake up Backend ---
+  useEffect(() => {
+    const wakeUp = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/health`);
+        if (response.ok) {
+          setIsBackendReady(true);
+        }
+      } catch (err) {
+        console.warn("Backend wake up failed or timed out. Will retry on next interaction.", err);
+      }
+    };
+    wakeUp();
+  }, []);
 
   // --- Initial Data Load ---
   useEffect(() => {
@@ -562,7 +578,13 @@ const App: React.FC = () => {
   };
 
   if (!isAuthenticated) {
-    return <PinPad onVerify={handleVerifyPin} error={pinError} />;
+    return (
+      <PinPad 
+        onVerify={handleVerifyPin} 
+        error={pinError} 
+        isBackendReady={isBackendReady} 
+      />
+    );
   }
 
   const renderProduct = (product: Product) => {
