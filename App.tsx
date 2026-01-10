@@ -5,6 +5,7 @@ import { ProductCard } from './components/ProductCard';
 import { SavingIndicator } from './components/SavingIndicator';
 import { PinPad } from './components/PinPad';
 import { PWAPrompt } from './components/PWAPrompt';
+import { LoadingScreen } from './components/LoadingScreen';
 import { Search, List, Star, X, RotateCcw } from 'lucide-react';
 
 // Determine API Base URL
@@ -12,10 +13,32 @@ const API_BASE = import.meta.env.PROD
   ? 'https://backend-i2ms.onrender.com' 
   : '';
 
+const SESSION_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isBackendReady, setIsBackendReady] = useState(false);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [appPin, setAppPin] = useState<string | null>(null);
+  
+  // --- Session Restoration ---
+  useEffect(() => {
+    const savedPin = localStorage.getItem('app_pin');
+    const expiry = localStorage.getItem('session_expiry');
+    
+    if (savedPin && expiry) {
+      if (Date.now() < parseInt(expiry)) {
+        setAppPin(savedPin);
+        setIsAuthenticated(true);
+        // Refresh the expiry on successful restoration
+        localStorage.setItem('session_expiry', (Date.now() + SESSION_TIMEOUT).toString());
+      } else {
+        localStorage.removeItem('app_pin');
+        localStorage.removeItem('session_expiry');
+      }
+    }
+  }, []);
+
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasLoadedLibrary, setHasLoadedLibrary] = useState(false);
@@ -45,6 +68,7 @@ const App: React.FC = () => {
 
   const [showTopHeader, setShowTopHeader] = useState(true);
   const lastScrollY = useRef(0);
+  const lastActivityRef = useRef<number>(Date.now());
   const removalTimersRef = useRef<Record<string, number[]>>({});
   const baseQuantitiesRef = useRef<Record<string, number>>({});
   
@@ -61,6 +85,16 @@ const App: React.FC = () => {
     recentlyUpdatedRef.current = recentlyUpdated;
   }, [recentlyUpdated]);
 
+  // --- Logout Helper ---
+  const handleLogout = useCallback(() => {
+    setIsAuthenticated(false);
+    localStorage.removeItem('app_pin');
+    localStorage.removeItem('session_expiry');
+    setAppPin(null);
+    setProducts([]);
+    setIsDataLoaded(false);
+  }, []);
+
   // --- Data Fetching ---
   const fetchInventory = useCallback(async (isBackground = false, favoritesOnly = false) => {
     if (!appPin) return;
@@ -73,9 +107,7 @@ const App: React.FC = () => {
         }
       });
       if (response.status === 401) {
-        setIsAuthenticated(false);
-        localStorage.removeItem('app_pin');
-        setAppPin(null);
+        handleLogout();
         return;
       }
       if (!response.ok) {
@@ -83,7 +115,13 @@ const App: React.FC = () => {
       }
       const data: Product[] = await response.json();
       
-      if (!favoritesOnly) setHasLoadedLibrary(true);
+      if (!favoritesOnly) {
+          setHasLoadedLibrary(true);
+          setIsDataLoaded(true);
+      }
+      if (favoritesOnly && !isDataLoaded) {
+          setIsDataLoaded(true);
+      }
 
       // Update base quantities
       data.forEach(p => {
@@ -172,12 +210,17 @@ const App: React.FC = () => {
 
     } catch (error) {
       console.error("Failed to fetch inventory:", error);
-      setSaveError("Could not load inventory.");
+      // If it fails on a foreground/initial load, it might be server sleep or session issue
+      if (!isBackground) {
+          handleLogout();
+      } else {
+          setSaveError("Could not load inventory.");
+      }
     } finally {
       setIsLoading(false);
       setIsSyncing(false);
     }
-  }, [appPin]);
+  }, [appPin, handleLogout, isDataLoaded]);
 
   // --- Wake up Backend ---
   useEffect(() => {
@@ -322,24 +365,65 @@ const App: React.FC = () => {
   }, [pendingChanges, fetchInventory, currentView]);
 
 
+  // --- Session Management ---
   useEffect(() => {
+    const checkSession = () => {
+        const now = Date.now();
+        const expiry = localStorage.getItem('session_expiry');
+        const sessionExpired = isAuthenticated && (now - lastActivityRef.current > SESSION_TIMEOUT);
+        const storageExpired = expiry && now > parseInt(expiry);
+
+        if (sessionExpired || storageExpired) {
+            console.log("Session expired due to inactivity.");
+            handleLogout();
+        }
+    };
+
+    const updateActivity = () => {
+        lastActivityRef.current = Date.now();
+        if (isAuthenticated) {
+            localStorage.setItem('session_expiry', (Date.now() + SESSION_TIMEOUT).toString());
+        }
+    };
+
+    const handleFocus = () => {
+        checkSession();
+        // Trigger a background refresh when app regains focus
+        if (isAuthenticated) {
+            fetchInventory(true, currentView === 'HOME');
+        }
+    };
+
     const handleFocusIn = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT') {
         setIsAnyInputFocused(true);
       }
+      updateActivity();
     };
+    
     const handleFocusOut = () => {
       setIsAnyInputFocused(false);
     };
 
     window.addEventListener('focusin', handleFocusIn);
     window.addEventListener('focusout', handleFocusOut);
+    window.addEventListener('mousedown', updateActivity);
+    window.addEventListener('touchstart', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', checkSession);
+
     return () => {
       window.removeEventListener('focusin', handleFocusIn);
       window.removeEventListener('focusout', handleFocusOut);
+      window.removeEventListener('mousedown', updateActivity);
+      window.removeEventListener('touchstart', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('visibilitychange', checkSession);
     };
-  }, []);
+  }, [isAuthenticated, handleLogout, fetchInventory, currentView]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -566,6 +650,8 @@ const App: React.FC = () => {
         body: JSON.stringify({ pin }),
       });
       if (response.ok) {
+        localStorage.setItem('app_pin', pin);
+        localStorage.setItem('session_expiry', (Date.now() + SESSION_TIMEOUT).toString());
         setAppPin(pin);
         setIsAuthenticated(true);
         return true;
@@ -577,14 +663,20 @@ const App: React.FC = () => {
     }
   };
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !isDataLoaded) {
     return (
       <PinPad 
         onVerify={handleVerifyPin} 
         error={pinError} 
-        isBackendReady={isBackendReady} 
+        isBackendReady={isBackendReady}
+        isAuthenticated={isAuthenticated}
+        isDataReady={isDataLoaded}
       />
     );
+  }
+
+  if (!isDataLoaded) {
+    return <LoadingScreen isComplete={false} />;
   }
 
   const renderProduct = (product: Product) => {

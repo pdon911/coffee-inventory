@@ -1,19 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Delete, X, Unlock } from 'lucide-react';
+import { LoadingScreen } from './LoadingScreen';
 
 interface PinPadProps {
   onVerify: (pin: string) => Promise<boolean>;
   error?: string | null;
   isBackendReady?: boolean;
+  isAuthenticated?: boolean;
+  isDataReady?: boolean;
 }
 
-export const PinPad: React.FC<PinPadProps> = ({ onVerify, error: externalError, isBackendReady = true }) => {
+export const PinPad: React.FC<PinPadProps> = ({ 
+  onVerify, 
+  error: externalError, 
+  isBackendReady = true,
+  isAuthenticated = false,
+  isDataReady = false
+}) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isWaitingForBackend, setIsWaitingForBackend] = useState(false);
-  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     if (externalError) {
@@ -47,11 +55,11 @@ export const PinPad: React.FC<PinPadProps> = ({ onVerify, error: externalError, 
     setError(null);
   };
 
-  const handleSubmit = async (isAuto = false) => {
+  const handleSubmit = useCallback(async (isAuto = false) => {
     if (pin.length === 0) return;
     
     // If backend isn't ready, enter waiting state
-    if (!isBackendReady && !isAuto) {
+    if (!isBackendReady) {
       setIsWaitingForBackend(true);
       return;
     }
@@ -70,58 +78,23 @@ export const PinPad: React.FC<PinPadProps> = ({ onVerify, error: externalError, 
         navigator.vibrate([50, 50, 50]);
       }
     }
-  };
-
-  // Simulated progress when waiting for backend
-  useEffect(() => {
-    let interval: number;
-    if (isWaitingForBackend && !isBackendReady) {
-      // Aim for ~90% over 45 seconds
-      // 90 / 450 = 0.2% per 100ms
-      interval = window.setInterval(() => {
-        setProgress(prev => {
-          if (prev >= 90) return 90;
-          return prev + 0.2;
-        });
-      }, 100);
-    }
-    return () => clearInterval(interval);
-  }, [isWaitingForBackend, isBackendReady]);
+  }, [pin, isBackendReady, onVerify]);
 
   // Handle backend wake up while waiting
   useEffect(() => {
-    if (isWaitingForBackend && isBackendReady) {
-      // Fast forward to 100%
-      setProgress(100);
-      const timer = setTimeout(async () => {
-        setIsVerifying(true);
-        const success = await onVerify(pin);
-        setIsVerifying(false);
-        
-        if (success) {
-          setIsUnlocked(true);
-        } else {
-          setError('INVALID PIN');
-          setPin('');
-          setIsWaitingForBackend(false);
-          setProgress(0);
-          if ('vibrate' in navigator) {
-            navigator.vibrate([50, 50, 50]);
-          }
-        }
-      }, 500); // Small delay to let user see 100%
-      return () => clearTimeout(timer);
+    if (isWaitingForBackend && isBackendReady && !isAuthenticated) {
+        handleSubmit(false);
     }
-  }, [isBackendReady, isWaitingForBackend, onVerify, pin]);
+  }, [isBackendReady, isWaitingForBackend, isAuthenticated, handleSubmit]);
 
   useEffect(() => {
     if (pin.length >= 4) {
       const timer = setTimeout(() => {
         handleSubmit(true);
-      }, 300); // 300ms debounce to avoid spamming 401s
+      }, 50); // Reduced from 300ms to 50ms for better responsiveness
       return () => clearTimeout(timer);
     }
-  }, [pin]);
+  }, [pin, handleSubmit]);
 
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
@@ -130,8 +103,8 @@ export const PinPad: React.FC<PinPadProps> = ({ onVerify, error: externalError, 
       isUnlocked ? 'scale-[2] opacity-0 pointer-events-none blur-xl' : 'animate-in fade-in duration-500'
     }`}>
       <div className="w-full max-w-sm flex flex-col items-center justify-center gap-12 py-6">
-        <div className="flex flex-col items-center flex-shrink-0 scale-90 sm:scale-100">
-          <img src="/croissant-logo.png" alt="Logo" className="w-16 h-16 mb-4 object-contain" />
+        <div className="flex flex-col items-center flex-shrink-0">
+          <img src="/croissant-logo.png" alt="Logo" className="w-24 h-24 sm:w-32 sm:h-32 mb-6 object-contain" />
           <h1 className="text-2xl font-black uppercase font-display tracking-tight text-white leading-none mb-1">
             Access Required
           </h1>
@@ -139,30 +112,10 @@ export const PinPad: React.FC<PinPadProps> = ({ onVerify, error: externalError, 
         </div>
 
         <div className="w-full flex flex-col justify-center py-2 min-h-[340px]">
-          {isWaitingForBackend ? (
-            <div className="w-full max-w-[280px] mx-auto flex flex-col items-center animate-in fade-in slide-in-from-bottom-4 duration-500">
-               <div className="mb-8 p-4 bg-villain-darkgray/30 rounded-2xl border border-white/5 flex flex-col items-center w-full">
-                  <div className="w-12 h-12 border-4 border-villain-red border-t-transparent rounded-full animate-spin mb-4" />
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white mb-1">
-                    Waking up server
-                  </p>
-                  <p className="text-[8px] font-bold uppercase tracking-widest text-gray-500">
-                    Est. wait: 45s (Render Free Tier)
-                  </p>
-               </div>
-               
-               <div className="w-full h-2 bg-villain-darkgray rounded-full overflow-hidden border border-white/5">
-                  <div 
-                    className="h-full bg-villain-red shadow-[0_0_15px_rgba(255,81,59,0.5)] transition-all duration-300 ease-out"
-                    style={{ width: `${progress}%` }}
-                  />
-               </div>
-               <p className="mt-4 text-[10px] font-black font-display text-villain-red animate-pulse uppercase tracking-widest">
-                 {Math.round(progress)}% Complete
-               </p>
-            </div>
+          {(isWaitingForBackend || isAuthenticated) ? (
+            <LoadingScreen isComplete={isBackendReady && isDataReady} />
           ) : (
-            <>
+            <div className="touch-none" style={{ touchAction: 'manipulation' }}>
           {/* PIN Display */}
           <div className={`mb-4 flex justify-center gap-4 h-8 items-center`}>
             {Array.from({ length: Math.max(pin.length, 4) }).map((_, i) => (
@@ -213,19 +166,19 @@ export const PinPad: React.FC<PinPadProps> = ({ onVerify, error: externalError, 
               <Delete size={24} />
             </button>
           </div>
-          </>
+          </div>
           )}
         </div>
 
         <div className="w-full mt-4 flex-shrink-0 px-4">
           <button
             onClick={() => { triggerHaptic(); handleSubmit(false); }}
-            disabled={pin.length === 0 || isVerifying}
+            disabled={pin.length === 0 || isVerifying || isWaitingForBackend || isAuthenticated}
             className={`w-full h-14 rounded-2xl font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 ${
-              pin.length > 0 
+              (pin.length > 0 && !isWaitingForBackend && !isAuthenticated)
                 ? 'bg-villain-red text-white shadow-lg shadow-villain-red/20 active:scale-95 text-xs' 
                 : 'bg-villain-gray text-gray-600 cursor-not-allowed text-xs'
-            }`}
+            } ${(isWaitingForBackend || isAuthenticated) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
           >
             {isVerifying ? (
               <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin" />
