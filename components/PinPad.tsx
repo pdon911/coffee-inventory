@@ -8,6 +8,7 @@ interface PinPadProps {
   isBackendReady?: boolean;
   isAuthenticated?: boolean;
   isDataReady?: boolean;
+  onAnimationComplete?: () => void;
 }
 
 export const PinPad: React.FC<PinPadProps> = ({ 
@@ -15,7 +16,8 @@ export const PinPad: React.FC<PinPadProps> = ({
   error: externalError, 
   isBackendReady = true,
   isAuthenticated = false,
-  isDataReady = false
+  isDataReady = false,
+  onAnimationComplete
 }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +74,7 @@ export const PinPad: React.FC<PinPadProps> = ({
     setIsVerifying(false);
     
     if (success) {
-      setIsUnlocked(true);
+      // Success handled by parent state
     } else {
       setError('INVALID PIN');
       setPin('');
@@ -103,7 +105,7 @@ export const PinPad: React.FC<PinPadProps> = ({
 
   return (
     <div className={`fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-4 h-[100dvh] overflow-hidden transition-all duration-700 ease-in-out ${
-      isUnlocked ? 'scale-[2] opacity-0 pointer-events-none blur-xl' : 'animate-in fade-in duration-500'
+      (isAuthenticated && isDataReady) ? 'scale-[2] opacity-0 pointer-events-none blur-xl' : 'animate-in fade-in duration-500'
     }`}>
       <div className="w-full max-w-sm flex flex-col items-center justify-center gap-12 py-6">
         <div className="flex flex-col items-center flex-shrink-0">
@@ -115,20 +117,19 @@ export const PinPad: React.FC<PinPadProps> = ({
         </div>
 
         <div className="w-full flex flex-col justify-center py-2 min-h-[340px]">
-          {(isWaitingForBackend || isAuthenticated) ? (
-            <LoadingScreen isComplete={isBackendReady && isDataReady} />
+          {(isWaitingForBackend || isAuthenticated || isVerifying) ? (
+            <LoadingScreen 
+              isComplete={isBackendReady && isDataReady && isAuthenticated} 
+              onAnimationEnd={onAnimationComplete}
+            />
           ) : (
             <div className="touch-none" style={{ touchAction: 'manipulation' }}>
           {/* PIN Display */}
           <div className={`mb-4 flex justify-center gap-4 h-8 items-center`}>
-            {Array.from({ length: Math.max(pin.length, 6) }).map((_, i) => (
+            {Array.from({ length: pin.length }).map((_, i) => (
               <div 
                 key={i}
-                className={`w-3 h-3 rounded-full border-2 transition-all duration-200 ${
-                  i < pin.length 
-                    ? 'bg-villain-red border-villain-red scale-125 shadow-[0_0_10px_rgba(255,81,59,0.5)]' 
-                    : (i < 6 && pin.length === 0) ? 'bg-transparent border-villain-gray/50' : 'bg-transparent border-villain-gray'
-                } ${error ? 'border-red-600 animate-bounce' : ''}`}
+                className={`w-3 h-3 rounded-full border-2 transition-all duration-200 bg-villain-red border-villain-red scale-125 shadow-[0_0_10px_rgba(255,81,59,0.5)] ${error ? 'border-red-600 animate-bounce' : ''}`}
               />
             ))}
           </div>

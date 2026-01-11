@@ -19,6 +19,7 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isBackendReady, setIsBackendReady] = useState(false);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [isReadyToRender, setIsReadyToRender] = useState(false);
   const [appPin, setAppPin] = useState<string | null>(null);
   
   // --- Session Restoration ---
@@ -663,7 +664,7 @@ const App: React.FC = () => {
     }
   };
 
-  if (!isAuthenticated || !isDataLoaded) {
+  if (!isReadyToRender) {
     return (
       <PinPad 
         onVerify={handleVerifyPin} 
@@ -671,12 +672,9 @@ const App: React.FC = () => {
         isBackendReady={isBackendReady}
         isAuthenticated={isAuthenticated}
         isDataReady={isDataLoaded}
+        onAnimationComplete={() => setIsReadyToRender(true)}
       />
     );
-  }
-
-  if (!isDataLoaded) {
-    return <LoadingScreen isComplete={false} />;
   }
 
   const renderProduct = (product: Product) => {

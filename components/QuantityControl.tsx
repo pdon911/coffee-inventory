@@ -37,7 +37,7 @@ export const QuantityControl: React.FC<QuantityControlProps> = ({ quantity, onCh
   return (
     <div className="flex items-center gap-0 sm:gap-2">
       {/* Status Indicators */}
-      {quantity === 0 ? (
+      {quantity <= 0 ? (
         <div className="bg-neutral-900 px-3 py-1 rounded-full border border-villain-red/30 shadow-lg flex items-center justify-center min-w-[70px] mr-1 sm:mr-0">
             <span className="text-[10px] font-black uppercase tracking-widest text-villain-red">
                 SOLD OUT
@@ -62,7 +62,9 @@ export const QuantityControl: React.FC<QuantityControlProps> = ({ quantity, onCh
             type="number"
             value={quantity}
             onChange={handleInputChange}
-            className="sm:w-14 w-11 h-10 text-center bg-black border-2 border-villain-gray focus:border-white font-bold focus:outline-none transition-colors rounded-sm text-white"
+            className={`sm:w-14 w-11 h-10 text-center bg-black border-2 font-bold focus:outline-none transition-colors rounded-sm text-white ${
+              quantity < 0 ? 'border-villain-red' : 'border-villain-gray focus:border-white'
+            }`}
           />
       </div>
 
