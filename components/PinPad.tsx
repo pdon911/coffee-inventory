@@ -64,13 +64,16 @@ export const PinPad: React.FC<PinPadProps> = ({
       return;
     }
 
-    if (!isAuto) setIsVerifying(true);
+    // Reset waiting state once we proceed to verify
+    setIsWaitingForBackend(false);
+    setIsVerifying(true);
+    
     const success = await onVerify(pin);
-    if (!isAuto) setIsVerifying(false);
+    setIsVerifying(false);
     
     if (success) {
       setIsUnlocked(true);
-    } else if (!isAuto) {
+    } else {
       setError('INVALID PIN');
       setPin('');
       // Haptic feedback for error
@@ -88,7 +91,7 @@ export const PinPad: React.FC<PinPadProps> = ({
   }, [isBackendReady, isWaitingForBackend, isAuthenticated, handleSubmit]);
 
   useEffect(() => {
-    if (pin.length >= 4) {
+    if (pin.length >= 6) {
       const timer = setTimeout(() => {
         handleSubmit(true);
       }, 50); // Reduced from 300ms to 50ms for better responsiveness
@@ -118,13 +121,13 @@ export const PinPad: React.FC<PinPadProps> = ({
             <div className="touch-none" style={{ touchAction: 'manipulation' }}>
           {/* PIN Display */}
           <div className={`mb-4 flex justify-center gap-4 h-8 items-center`}>
-            {Array.from({ length: Math.max(pin.length, 4) }).map((_, i) => (
+            {Array.from({ length: Math.max(pin.length, 6) }).map((_, i) => (
               <div 
                 key={i}
                 className={`w-3 h-3 rounded-full border-2 transition-all duration-200 ${
                   i < pin.length 
                     ? 'bg-villain-red border-villain-red scale-125 shadow-[0_0_10px_rgba(255,81,59,0.5)]' 
-                    : (i < 4 && pin.length === 0) ? 'bg-transparent border-villain-gray/50' : 'bg-transparent border-villain-gray'
+                    : (i < 6 && pin.length === 0) ? 'bg-transparent border-villain-gray/50' : 'bg-transparent border-villain-gray'
                 } ${error ? 'border-red-600 animate-bounce' : ''}`}
               />
             ))}
