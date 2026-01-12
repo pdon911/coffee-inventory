@@ -1,0 +1,7 @@
+.idx/
+.env
+local.db
+render.yaml
+Procfile
+node_modules/
+dist/
