@@ -302,6 +302,11 @@ const App: React.FC = () => {
           body: JSON.stringify({ changes: changesToSave }),
         });
 
+        if (response.status === 401) {
+          handleLogout();
+          return;
+        }
+
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.error || 'Failed to save changes.');
@@ -336,12 +341,13 @@ const App: React.FC = () => {
         fetchInventory(true, favoritesOnly);
 
       } catch (error: any) {
-        setSaveError(error.message || "An error occurred.");
-        setTimeout(() => setSaveError(null), 5000); // Show error for 5s
-        
-        // On failure, refetch to revert optimistic updates
-        fetchInventory(true, false);
-
+        if (isAuthenticated) {
+            setSaveError(error.message || "An error occurred.");
+            setTimeout(() => setSaveError(null), 5000); // Show error for 5s
+            
+            // On failure, refetch to revert optimistic updates
+            fetchInventory(true, false);
+        }
       } finally {
         setIsSaving(false);
         // Clear syncing status for these variations
@@ -372,6 +378,12 @@ const App: React.FC = () => {
     };
 
     const updateActivity = () => {
+        // Prevent activity update if session is already expired
+        const expiry = localStorage.getItem('session_expiry');
+        if (expiry && Date.now() > parseInt(expiry)) {
+            return;
+        }
+
         lastActivityRef.current = Date.now();
         if (isAuthenticated) {
             localStorage.setItem('session_expiry', (Date.now() + SESSION_TIMEOUT).toString());
@@ -379,6 +391,17 @@ const App: React.FC = () => {
     };
 
     const handleFocus = () => {
+        // Run session check first
+        const now = Date.now();
+        const expiry = localStorage.getItem('session_expiry');
+        const storageExpired = expiry && now > parseInt(expiry);
+        
+        if (storageExpired && isAuthenticated) {
+            console.log("Session expired detected on focus.");
+            handleLogout();
+            return;
+        }
+
         checkSession();
         // Trigger a background refresh when app regains focus
         if (isAuthenticated) {
@@ -500,6 +523,10 @@ const App: React.FC = () => {
             },
             body: JSON.stringify({ id: id }),
         });
+        if (response.status === 401) {
+            handleLogout();
+            return;
+        }
         if (!response.ok) throw new Error('Failed to toggle star');
     } catch (error) {
         console.error("Failed to toggle star:", error);
@@ -563,6 +590,11 @@ const App: React.FC = () => {
         },
         body: JSON.stringify({ variationId }),
       });
+
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
 
       if (!response.ok) {
         const errorData = await response.json();

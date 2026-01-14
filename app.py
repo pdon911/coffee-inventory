@@ -14,7 +14,13 @@ print("--- STARTING COFFEE VILLAIN BACKEND ---", flush=True)
 print(f"DEBUG: VERCEL environment: {os.environ.get('VERCEL')}", flush=True)
 print(f"DEBUG: DATABASE_URL present: {bool(os.environ.get('DATABASE_URL'))}", flush=True)
 
-app = Flask(__name__)
+# On Vercel, the filesystem is read-only except for /tmp.
+# We set the instance_path to /tmp to prevent Flask-SQLAlchemy from
+# attempting to create an 'instance' folder in the read-only root.
+if os.environ.get("VERCEL"):
+    app = Flask(__name__, instance_path='/tmp')
+else:
+    app = Flask(__name__)
 # Enable CORS for all routes under /api/
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
