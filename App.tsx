@@ -9,9 +9,8 @@ import { LoadingScreen } from './components/LoadingScreen';
 import { Search, List, Star, X, RotateCcw } from 'lucide-react';
 
 // Determine API Base URL
-const API_BASE = import.meta.env.PROD 
-  ? 'https://backend-i2ms.onrender.com' 
-  : '';
+// On Vercel, the frontend and backend are on the same domain, so we use relative paths.
+const API_BASE = '';
 
 const SESSION_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 

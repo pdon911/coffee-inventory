@@ -110,7 +110,7 @@ def get_catalog_structure():
                 break
         except Exception as e:
             print(f"Square API Error fetching catalog: {e}")
-            return []
+            return None # Return None to indicate a failure rather than an empty catalog
     return catalog
 
 def fetch_inventory_counts(variation_ids):
@@ -322,8 +322,8 @@ def api_inventory():
         # On full catalog refresh, we clear inventory cache to ensure fresh counts
         _inventory_cache = {}
 
-    if not _catalog_cache:
-        return jsonify([])
+    if _catalog_cache is None:
+        return jsonify({"error": "Failed to fetch catalog from Square"}), 500
 
     # Add favorite status (always fresh from DB)
     try:
@@ -542,9 +542,12 @@ def background_sync():
 
 # Start the background thread on import so it runs with Gunicorn
 # But avoid double-start during Flask local development
-if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not os.environ.get("FLASK_DEBUG"):
-    sync_thread = threading.Thread(target=background_sync, daemon=True)
-    sync_thread.start()
+# Start the background thread only if NOT running on Vercel
+# Vercel is serverless and doesn't support long-running background threads.
+if not os.environ.get("VERCEL"):
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not os.environ.get("FLASK_DEBUG"):
+        sync_thread = threading.Thread(target=background_sync, daemon=True)
+        sync_thread.start()
 
 if __name__ == '__main__':
     # Get location ID on startup before starting the sync thread
