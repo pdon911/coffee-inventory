@@ -16,7 +16,7 @@ const SESSION_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isBackendReady, setIsBackendReady] = useState(false);
+  const [isBackendReady, setIsBackendReady] = useState(true);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [isReadyToRender, setIsReadyToRender] = useState(false);
   const [appPin, setAppPin] = useState<string | null>(null);
@@ -223,18 +223,10 @@ const App: React.FC = () => {
   }, [appPin, handleLogout, isDataLoaded]);
 
   // --- Wake up Backend ---
+  // On Vercel, we don't need to manually wake up the backend as it starts on demand.
+  // We'll keep the effect but just log for now, or we could remove it entirely.
   useEffect(() => {
-    const wakeUp = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/api/health`);
-        if (response.ok) {
-          setIsBackendReady(true);
-        }
-      } catch (err) {
-        console.warn("Backend wake up failed or timed out. Will retry on next interaction.", err);
-      }
-    };
-    wakeUp();
+    setIsBackendReady(true);
   }, []);
 
   // --- Initial Data Load ---

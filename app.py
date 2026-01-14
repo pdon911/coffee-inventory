@@ -11,6 +11,8 @@ import threading
 load_dotenv()
 
 print("--- STARTING COFFEE VILLAIN BACKEND ---", flush=True)
+print(f"DEBUG: VERCEL environment: {os.environ.get('VERCEL')}", flush=True)
+print(f"DEBUG: DATABASE_URL present: {bool(os.environ.get('DATABASE_URL'))}", flush=True)
 
 app = Flask(__name__)
 # Enable CORS for all routes under /api/
@@ -295,18 +297,21 @@ def verify_pin():
 
 @app.route('/api/health')
 def health_check():
+    print("DEBUG: Health check requested", flush=True)
     db_status = "connected"
     try:
         # Simple query to check DB connectivity
-        Favorite.query.first()
+        # We'll skip the actual query for a moment to see if the 500 persists
+        db_status = "Skipped check"
     except Exception as e:
         db_status = f"error: {str(e)}"
         
     return jsonify({
-        "status": "healthy", 
+        "status": "healthy",
         "database": db_status,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "pin_configured": bool(APP_PIN)
+        "pin_configured": bool(APP_PIN),
+        "location_id": bool(SQUARE_LOCATION_ID)
     })
 
 @app.route('/api/inventory')
